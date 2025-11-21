@@ -11,12 +11,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -25,10 +26,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.nm.story2mv.data.model.Shot
 import com.nm.story2mv.data.model.ShotStatus
 import com.nm.story2mv.data.model.StoryProject
@@ -36,6 +37,7 @@ import com.nm.story2mv.data.model.VideoTaskState
 import com.nm.story2mv.ui.screen.components.AnimatedDots
 import com.nm.story2mv.ui.screen.components.EmptyStateCard
 import com.nm.story2mv.ui.screen.components.FullScreenLoading
+import kotlin.math.max
 
 @Composable
 fun StoryboardScreen(
@@ -46,7 +48,7 @@ fun StoryboardScreen(
     onGenerateVideo: () -> Unit
 ) {
     when {
-        isLoading -> FullScreenLoading(message = "加载分镜中…")
+        isLoading -> FullScreenLoading(message = "Loading storyboard…")
 
         state == null -> EmptyStoryboardPlaceholder()
 
@@ -60,7 +62,6 @@ fun StoryboardScreen(
         }
     }
 }
-
 @Composable
 private fun StoryboardContent(
     project: StoryProject,
@@ -68,53 +69,92 @@ private fun StoryboardContent(
     onGenerateVideo: () -> Unit,
     onPreview: () -> Unit
 ) {
+    val pagerState = rememberPagerState(pageCount = { max(project.shots.size, 1) })
+    val readyCount = project.shots.count { it.status == ShotStatus.READY }
+    val generatingCount = project.shots.count { it.status == ShotStatus.GENERATING }
+    val completionRatio = if (project.shots.isEmpty()) 0f else readyCount.toFloat() / project.shots.size
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Text(text = project.title, style = MaterialTheme.typography.headlineMedium)
-        Text(text = project.synopsis, style = MaterialTheme.typography.bodyLarge)
-        VideoStatusBanner(project.videoState)
+        StoryOverviewCard(
+            project = project,
+            readyCount = readyCount,
+            generatingCount = generatingCount,
+            completionRatio = completionRatio
+        )
 
         if (project.shots.isEmpty()) {
             EmptyShots()
         } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(project.shots) { shot ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(text = "Storyboard Shots", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        text = "Swipe left and right to view shot details",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    text = "${project.shots.size} shots",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            HorizontalPager(
+                state = pagerState,
+                pageSpacing = 12.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(360.dp)
+            ) { page ->
+                val shot = project.shots.getOrNull(page)
+                if (shot != null) {
                     ShotCard(
                         shot = shot,
                         onDetail = { onShotDetail(shot) }
                     )
                 }
             }
+            PagerDots(total = project.shots.size, current = pagerState.currentPage)
         }
 
         Spacer(modifier = Modifier.weight(1f))
         Button(
             onClick = onGenerateVideo,
             enabled = project.videoState != VideoTaskState.GENERATING,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
         ) {
             Text(
                 when (project.videoState) {
-                    VideoTaskState.GENERATING -> "合成中..."
-                    VideoTaskState.READY -> "重新生成视频"
-                    else -> "生成视频"
+                    VideoTaskState.GENERATING -> "Generating..."
+                    VideoTaskState.READY -> "Regenerate Video"
+                    else -> "Generate Video"
                 }
             )
         }
         if (project.videoState == VideoTaskState.GENERATING) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            AnimatedDots(text = "视频合成中", modifier = Modifier.padding(top = 4.dp))
+            AnimatedDots(text = "Video synthesis in progress", modifier = Modifier.padding(top = 4.dp))
         }
         if (project.videoState == VideoTaskState.READY) {
             OutlinedButton(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
                 onClick = onPreview
             ) {
-                Text("查看成品预览")
+                Text("Preview Final Video")
             }
         }
     }
@@ -129,8 +169,8 @@ private fun EmptyStoryboardPlaceholder() {
         verticalArrangement = Arrangement.Center
     ) {
         EmptyStateCard(
-            title = "暂无分镜",
-            description = "请先在 Create 页面生成故事内容。"
+            title = "No Storyboard Yet",
+            description = "Please generate story content on the Create page first."
         )
     }
 }
@@ -140,48 +180,83 @@ private fun ShotCard(
     shot: Shot,
     onDetail: () -> Unit
 ) {
-    Card(
+    ElevatedCard(
         modifier = Modifier
-            .width(240.dp)
+            .fillMaxWidth()
             .height(320.dp)
             .clickable { onDetail() }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            AsyncImage(
-                model = shot.thumbnailUrl,
-                contentDescription = shot.title,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp)
-            )
+                    .height(190.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                ShotStatusBadge(
+                    status = shot.status,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(12.dp)
+                )
+                Text(
+                    text = "AI generated image will be displayed here",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(text = shot.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                ShotStatusBadge(shot.status)
-                AssistChip(onClick = onDetail, label = { Text("详情") })
+                Text(
+                    text = shot.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = shot.prompt,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = shot.narration,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "Transition: ${shot.transition.label}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                AssistChip(onClick = onDetail, label = { Text("View Shot Details") })
             }
         }
     }
 }
 
 @Composable
-private fun ShotStatusBadge(status: ShotStatus) {
+private fun ShotStatusBadge(status: ShotStatus, modifier: Modifier = Modifier) {
     val (label, color) = when (status) {
-        ShotStatus.NOT_GENERATED -> "未生成" to Color.Gray
-        ShotStatus.GENERATING -> "生成中" to MaterialTheme.colorScheme.tertiary
-        ShotStatus.READY -> "已生成" to MaterialTheme.colorScheme.primary
+        ShotStatus.NOT_GENERATED -> "Not Generated" to Color.Gray
+        ShotStatus.GENERATING -> "Generating" to MaterialTheme.colorScheme.tertiary
+        ShotStatus.READY -> "Generated" to MaterialTheme.colorScheme.primary
     }
     Row(
-        modifier = Modifier
+        modifier = modifier
             .background(color.copy(alpha = 0.15f), MaterialTheme.shapes.small)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = label, color = color)
+        Text(text = label, color = color, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -199,11 +274,66 @@ private fun EmptyShots() {
                 .padding(16.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(text = "暂无分镜镜头", style = MaterialTheme.typography.titleMedium)
+            Text(text = "No Shots Yet", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "生成故事后我们会为你自动创建分镜，或者点击下方按钮重新生成。",
+                text = "After the story is generated, we will automatically create storyboards for you, or you can click the button below to regenerate them.",
                 style = MaterialTheme.typography.bodySmall
             )
+        }
+    }
+}
+
+@Composable
+private fun StoryOverviewCard(
+    project: StoryProject,
+    readyCount: Int,
+    generatingCount: Int,
+    completionRatio: Float
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(text = project.title, style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = project.synopsis,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(text = "Story Style", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = project.style.label, style = MaterialTheme.typography.titleSmall)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(text = "Completion", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = "${(completionRatio * 100).toInt()}%",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            LinearProgressIndicator(
+                progress = { completionRatio },
+                modifier = Modifier.fillMaxWidth(),
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(text = "Ready: $readyCount", style = MaterialTheme.typography.bodySmall)
+                Text(text = "Generating: $generatingCount", style = MaterialTheme.typography.bodySmall)
+                Text(text = "Total: ${project.shots.size}", style = MaterialTheme.typography.bodySmall)
+            }
+            VideoStatusBanner(project.videoState)
         }
     }
 }
@@ -212,26 +342,26 @@ private fun EmptyShots() {
 private fun VideoStatusBanner(videoState: VideoTaskState) {
     val (label, message, color) = when (videoState) {
         VideoTaskState.GENERATING -> Triple(
-            "生成中",
-            "正在合成成片，完成后将自动跳转至预览页。",
+            "Generating",
+            "Video synthesis in progress, will automatically navigate to preview page when completed.",
             MaterialTheme.colorScheme.tertiary
         )
 
         VideoTaskState.READY -> Triple(
-            "完成",
-            "最新的视频已准备就绪，可以直接预览或导出。",
+            "Completed",
+            "Latest video is ready, you can preview or export directly.",
             MaterialTheme.colorScheme.primary
         )
 
         VideoTaskState.ERROR -> Triple(
-            "失败",
-            "合成失败，可稍后重试。",
+            "Failed",
+            "Synthesis failed, please try again later.",
             MaterialTheme.colorScheme.error
         )
 
         else -> Triple(
-            "待处理",
-            "点击下方按钮即可开始视频合成。",
+            "Pending",
+            "Click the button below to start video synthesis.",
             MaterialTheme.colorScheme.secondary
         )
     }
@@ -243,6 +373,29 @@ private fun VideoStatusBanner(videoState: VideoTaskState) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = label, color = color, style = MaterialTheme.typography.labelLarge)
             Text(text = message, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun PagerDots(total: Int, current: Int) {
+    if (total <= 1) return
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        repeat(total) { index ->
+            val isActive = index == current
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 4.dp)
+                    .size(if (isActive) 10.dp else 8.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isActive) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
+            )
         }
     }
 }

@@ -12,26 +12,31 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,49 +57,84 @@ fun ShotDetailScreen(
     onSave: () -> Unit,
     onBack: () -> Unit
 ) {
+    val status = state.shot?.status ?: ShotStatus.NOT_GENERATED
+    val scrollState = rememberScrollState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .verticalScroll(scrollState)
+            .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         ShotDetailHeader(shot = state.shot, onBack = onBack)
-        ShotGenerationTimeline(status = state.shot?.status ?: ShotStatus.NOT_GENERATED)
-        AnimatedStatusHint(
-            text = when (state.shot?.status) {
-                ShotStatus.GENERATING -> "AI 正在生成新的镜头画面"
-                ShotStatus.READY -> "镜头素材已完成，可随时更新"
-                else -> "准备好后点击 Generate Image 开始生成"
+        PreviewPlaceholder(status = status, isRegenerating = state.isRegenerating)
+        ShotQuickInfoRow(shot = state.shot, transition = state.transition)
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ShotGenerationTimeline(status = status)
+                AnimatedStatusHint(
+                    text = when {
+                        state.isRegenerating -> "Regenerating shot image"
+                        state.shot?.status == ShotStatus.READY -> "Shot material is ready, you can adjust the prompt and regenerate anytime"
+                        state.shot?.status == ShotStatus.GENERATING -> "AI is generating the shot image"
+                        else -> "Complete the prompt and click the button below to generate"
+                    }
+                )
             }
-        )
+        }
 
-        OutlinedTextField(
-            value = state.promptInput,
-            onValueChange = onPromptChanged,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(160.dp),
-            label = { Text("Prompt") },
-            leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) }
-        )
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                OutlinedTextField(
+                    value = state.promptInput,
+                    onValueChange = onPromptChanged,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp),
+                    label = { Text("Visual Prompt") },
+                    leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    supportingText = { Text(text = "Describe visual details, style, atmosphere, etc.") }
+                )
 
-        OutlinedTextField(
-            value = state.narrationInput,
-            onValueChange = onNarrationChanged,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(120.dp),
-            label = { Text("Narration / 旁白") }
-        )
+                OutlinedTextField(
+                    value = state.narrationInput,
+                    onValueChange = onNarrationChanged,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp),
+                    label = { Text("Narration") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent
+                    )
+                )
 
-        TransitionSelector(
-            selected = state.transition,
-            onSelected = onTransitionChanged
-        )
+                TransitionSelector(
+                    selected = state.transition,
+                    onSelected = onTransitionChanged
+                )
+            }
+        }
 
         if (state.isRegenerating) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            AnimatedDots(text = "重新生成图像中", modifier = Modifier.padding(start = 4.dp))
+            AnimatedDots(text = "Regenerating shot", modifier = Modifier.padding(start = 4.dp))
         }
 
         Row(
@@ -102,13 +142,21 @@ fun ShotDetailScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(onClick = onSave, modifier = Modifier.weight(1f)) {
-                Text("保存设置")
+            Button(
+                onClick = onSave,
+                enabled = state.shot != null,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(56.dp)
+            ) {
+                Text("Save Changes")
             }
-            TextButton(
-                enabled = !state.isRegenerating,
+            OutlinedButton(
+                enabled = !state.isRegenerating && state.shot != null,
                 onClick = onGenerateImage,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .height(56.dp)
             ) {
                 if (state.isRegenerating) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -116,7 +164,7 @@ fun ShotDetailScreen(
                 }
                 Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null)
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Generate Image")
+                Text("Generate Shot Image")
             }
         }
 
@@ -139,11 +187,11 @@ private fun ShotDetailHeader(
         IconButton(onClick = onBack) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "返回"
+                contentDescription = "Back"
             )
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = shot?.title ?: "镜头详情", style = MaterialTheme.typography.headlineSmall)
+            Text(text = shot?.title ?: "Shot Details", style = MaterialTheme.typography.headlineSmall)
             Text(
                 text = "Story ID: ${shot?.storyId ?: "-"}",
                 style = MaterialTheme.typography.bodySmall
@@ -154,12 +202,54 @@ private fun ShotDetailHeader(
 }
 
 @Composable
+private fun ShotQuickInfoRow(shot: Shot?, transition: TransitionType) {
+    if (shot == null) return
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        ShotInfoCard(
+            modifier = Modifier.weight(1f),
+            title = "Transition",
+            value = transition.label
+        )
+        ShotInfoCard(
+            modifier = Modifier.weight(1f),
+            title = "Prompt Length",
+            value = "${shot.prompt.length}"
+        )
+        ShotInfoCard(
+            modifier = Modifier.weight(1f),
+            title = "Narration Length",
+            value = "${shot.narration.length}"
+        )
+    }
+}
+
+@Composable
+private fun ShotInfoCard(modifier: Modifier = Modifier, title: String, value: String) {
+    Surface(
+        modifier = modifier,
+        tonalElevation = 2.dp,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(text = title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text = value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
 private fun TransitionSelector(
     selected: TransitionType,
     onSelected: (TransitionType) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = "视频转场效果", style = MaterialTheme.typography.titleMedium)
+        Text(text = "Video Transition Effect", style = MaterialTheme.typography.titleMedium)
         SingleChoiceSegmentedButtonRow {
             TransitionType.entries.forEachIndexed { index, type ->
                 SegmentedButton(
@@ -177,9 +267,9 @@ private fun TransitionSelector(
 @Composable
 private fun ShotStatusChip(status: ShotStatus) {
     val (label, color) = when (status) {
-        ShotStatus.NOT_GENERATED -> "未生成" to MaterialTheme.colorScheme.outline
-        ShotStatus.GENERATING -> "生成中" to MaterialTheme.colorScheme.tertiary
-        ShotStatus.READY -> "已生成" to MaterialTheme.colorScheme.primary
+        ShotStatus.NOT_GENERATED -> "Not Generated" to MaterialTheme.colorScheme.outline
+        ShotStatus.GENERATING -> "Generating" to MaterialTheme.colorScheme.tertiary
+        ShotStatus.READY -> "Ready" to MaterialTheme.colorScheme.primary
     }
     Surface(
         color = color.copy(alpha = 0.12f),
@@ -195,11 +285,69 @@ private fun ShotStatusChip(status: ShotStatus) {
 }
 
 @Composable
+private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean) {
+    val previewHint = when {
+        isRegenerating -> "Regenerating shot..."
+        status == ShotStatus.GENERATING -> "AI is generating the shot image"
+        status == ShotStatus.READY -> "Image generated, can be updated anytime"
+        else -> "Preview will be shown after generation"
+    }
+
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "Shot Preview", style = MaterialTheme.typography.titleMedium)
+                ShotStatusChip(status = status)
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(230.dp)
+                    .background(
+                        brush = Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f)
+                            )
+                        ),
+                        shape = MaterialTheme.shapes.medium
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isRegenerating || status == ShotStatus.GENERATING) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+                    }
+                    Text(
+                        text = previewHint,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ShotGenerationTimeline(status: ShotStatus) {
     val steps = listOf(
-        ShotStatus.NOT_GENERATED to "未生成",
-        ShotStatus.GENERATING to "生成中",
-        ShotStatus.READY to "已生成"
+        ShotStatus.NOT_GENERATED to "Not Generated",
+        ShotStatus.GENERATING to "Generating",
+        ShotStatus.READY to "Ready"
     )
     Row(
         modifier = Modifier
