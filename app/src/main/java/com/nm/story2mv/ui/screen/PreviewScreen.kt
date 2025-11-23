@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -17,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -32,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
@@ -94,11 +99,20 @@ fun PreviewScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(text = state.title, style = MaterialTheme.typography.headlineSmall)
+//        Text(text = state.title, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            text = state.title,
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.CenterHorizontally)
+        )
         AndroidView(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .requiredHeight(300.dp),
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = true
@@ -197,33 +211,57 @@ private fun PlaybackControls(
 ) {
     val progressFraction = if (total > 0) progress.toFloat() / total.toFloat() else 0f
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+                .padding(start = 0.dp),
+            horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onTogglePlay) {
-                Icon(
+            IconButton(
+                onClick = onTogglePlay,
+                modifier = Modifier.requiredSize(24.dp)
+            ) { Icon(
                     imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (isPlaying) "暂停" else "播放"
                 )
             }
-            Text(text = "${formatTime(progress)} / ${formatTime(total)}")
+
+            Slider(
+                modifier = Modifier
+                    .weight(1f)
+                    .requiredHeight(4.dp),
+                value = progressFraction,
+                onValueChange = onScrub,
+                valueRange = 0f..1f,
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary
+                )
+            )
         }
-        Slider(
-            modifier = Modifier.fillMaxWidth(),
-            value = progressFraction,
-            onValueChange = onScrub,
-            valueRange = 0f..1f
+
+        Text(
+            text = "${formatTime(progress)} / ${formatTime(total)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp)
+                .align(Alignment.Start) // 右对齐
         )
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(imageVector = Icons.Filled.VolumeUp, contentDescription = null)
             Slider(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .requiredHeight(4.dp),
                 value = volume,
                 onValueChange = onVolumeChange,
                 valueRange = 0f..1f
