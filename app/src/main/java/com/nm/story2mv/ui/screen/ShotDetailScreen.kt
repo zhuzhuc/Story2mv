@@ -35,8 +35,15 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +70,12 @@ fun ShotDetailScreen(
 ) {
     val status = state.shot?.status ?: ShotStatus.NOT_GENERATED
     val scrollState = rememberScrollState()
+    val promptLimit = 400
+    val narrationLimit = 300
+    val promptCountText = "${state.promptInput.length}/$promptLimit"
+    val narrationCountText = "${state.narrationInput.length}/$narrationLimit"
+    val promptCountColor = if (state.promptInput.length > promptLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    val narrationCountColor = if (state.narrationInput.length > narrationLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
 
     if (state.isLoading) {
         FullScreenLoading(message = "正在加载镜头…")
@@ -123,7 +136,15 @@ fun ShotDetailScreen(
                         unfocusedBorderColor = Color.Transparent
                     ),
                     textStyle = MaterialTheme.typography.bodyLarge,
-                    supportingText = { Text(text = "描述画面细节、风格、氛围等。") }
+                    supportingText = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "描述画面细节、风格、氛围等。")
+                            Text(text = promptCountText, color = promptCountColor)
+                        }
+                    }
                 )
 
                 OutlinedTextField(
@@ -136,7 +157,16 @@ fun ShotDetailScreen(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.Transparent,
                         unfocusedBorderColor = Color.Transparent
-                    )
+                    ),
+                    supportingText = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "旁白用于合成配音或字幕。")
+                            Text(text = narrationCountText, color = narrationCountColor)
+                        }
+                    }
                 )
 
                 TransitionSelector(
@@ -326,7 +356,7 @@ private fun MissingShotState(error: String?, onRetry: () -> Unit, onBack: () -> 
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             OutlinedButton(modifier = Modifier.weight(1f), onClick = onBack) {
-                Text("返回")
+                Text("返回分镜列表")
             }
             Button(modifier = Modifier.weight(1f), onClick = onRetry) {
                 Text("重试加载")
@@ -337,6 +367,23 @@ private fun MissingShotState(error: String?, onRetry: () -> Unit, onBack: () -> 
 
 @Composable
 private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean) {
+    val shimmerTransition = rememberInfiniteTransition(label = "previewShimmer")
+    val shimmerOffset by shimmerTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 500f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 1400)),
+        label = "previewOffset"
+    )
+    val shimmerBrush = Brush.linearGradient(
+        colors = listOf(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            MaterialTheme.colorScheme.surfaceVariant
+        ),
+        start = Offset(shimmerOffset - 300f, 0f),
+        end = Offset(shimmerOffset, 300f)
+    )
+
     val previewHint = when {
         isRegenerating -> "正在重新生成镜头…"
         status == ShotStatus.GENERATING -> "AI 正在生成镜头画面"
@@ -364,12 +411,16 @@ private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean) {
                     .fillMaxWidth()
                     .height(230.dp)
                     .background(
-                        brush = Brush.linearGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f)
+                        brush = if (status == ShotStatus.READY && !isRegenerating) {
+                            Brush.linearGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f)
+                                )
                             )
-                        ),
+                        } else {
+                            shimmerBrush
+                        },
                         shape = MaterialTheme.shapes.medium
                     ),
                 contentAlignment = Alignment.Center

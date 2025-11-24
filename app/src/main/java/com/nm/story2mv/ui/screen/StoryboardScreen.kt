@@ -99,6 +99,7 @@ private fun StoryboardContent(
     val pullRefreshState = rememberPullRefreshState(refreshing = isRefreshing, onRefresh = onRetry)
     val generateCooldownMs = 1800L
     var lastGenerateClick by remember { mutableStateOf(0L) }
+    val isCooling = (System.currentTimeMillis() - lastGenerateClick) in 0..generateCooldownMs
 
     Box(
         modifier = Modifier
@@ -109,8 +110,10 @@ private fun StoryboardContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            VideoStatusBanner(project.videoState, project.previewUrl != null)
+
             StoryOverviewCard(
                 project = project,
                 readyCount = readyCount,
@@ -125,31 +128,42 @@ private fun StoryboardContent(
             if (project.shots.isEmpty()) {
                 EmptyShots(onRetry)
             } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(text = "分镜镜头", style = MaterialTheme.typography.titleLarge)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(text = "分镜镜头", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = "左右滑动查看镜头详情",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Text(
-                        text = "左右滑动查看镜头详情",
+                        text = "${project.shots.size} 个镜头",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                val refreshHint = when {
+                    isRefreshing -> "刷新中..."
+                    errorMessage != null -> "更新失败，稍后可重试"
+                    else -> "刚刚更新"
+                }
                 Text(
-                    text = "${project.shots.size} 个镜头",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = refreshHint,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-            if (canPreview) {
-                AssistChip(onClick = onPreview, label = { Text("最新预览已就绪") })
-            }
+                if (canPreview) {
+                    AssistChip(onClick = onPreview, label = { Text("最新预览已就绪") })
+                }
                 HorizontalPager(
                     state = pagerState,
                     pageSpacing = 12.dp,
+                    userScrollEnabled = !isRefreshing,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(360.dp)
@@ -174,7 +188,7 @@ private fun StoryboardContent(
                         onGenerateVideo()
                     }
                 },
-                enabled = canGenerateVideo,
+                enabled = canGenerateVideo && !isCooling,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
@@ -190,6 +204,14 @@ private fun StoryboardContent(
             if (project.videoState == VideoTaskState.GENERATING) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 AnimatedDots(text = "视频合成中", modifier = Modifier.padding(top = 4.dp))
+            }
+            if (isCooling && canGenerateVideo) {
+                Text(
+                    text = "请稍候再试（防抖中）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
             if (canPreview) {
                 OutlinedButton(
