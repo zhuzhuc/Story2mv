@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -257,7 +257,7 @@ private fun PlaybackControls(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(imageVector = Icons.Filled.VolumeUp, contentDescription = null)
+            Icon(imageVector = Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null)
             Slider(
                 modifier = Modifier
                     .fillMaxWidth()

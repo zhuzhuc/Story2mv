@@ -9,8 +9,9 @@ import com.nm.story2mv.data.repository.StoryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -20,6 +21,7 @@ data class ShotDetailUiState(
     val narrationInput: String = "",
     val transition: TransitionType = TransitionType.CROSSFADE,
     val isRegenerating: Boolean = false,
+    val isLoading: Boolean = true,
     val error: String? = null
 )
 
@@ -38,15 +40,24 @@ class ShotDetailViewModel(
         viewModelScope.launch {
             repository.observeStory(storyId)
                 .map { project -> project?.shots?.firstOrNull { it.id == shotId } }
-                .filterNotNull()
+                .onStart { _uiState.update { it.copy(isLoading = true, error = null) } }
                 .collectLatest { shot ->
                     _uiState.update {
-                        it.copy(
-                            shot = shot,
-                            promptInput = shot.prompt,
-                            narrationInput = shot.narration,
-                            transition = shot.transition
-                        )
+                        if (shot != null) {
+                            it.copy(
+                                shot = shot,
+                                promptInput = shot.prompt,
+                                narrationInput = shot.narration,
+                                transition = shot.transition,
+                                isLoading = false,
+                                error = null
+                            )
+                        } else {
+                            it.copy(
+                                isLoading = false,
+                                error = "未找到该镜头，请返回或重试。"
+                            )
+                        }
                     }
                 }
         }
@@ -92,5 +103,30 @@ class ShotDetailViewModel(
             }
         }
     }
-}
 
+    fun reloadShot() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            val shot = repository.observeStory(storyId)
+                .firstOrNull()
+                ?.shots
+                ?.firstOrNull { it.id == shotId }
+            _uiState.update {
+                if (shot != null) {
+                    it.copy(
+                        shot = shot,
+                        promptInput = shot.prompt,
+                        narrationInput = shot.narration,
+                        transition = shot.transition,
+                        isLoading = false
+                    )
+                } else {
+                    it.copy(
+                        isLoading = false,
+                        error = "仍未找到该镜头，请确认故事已存在。"
+                    )
+                }
+            }
+        }
+    }
+}

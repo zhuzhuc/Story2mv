@@ -11,12 +11,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class StoryboardUiState(
     val project: StoryProject? = null,
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
+    val errorMessage: String? = null,
     val toastMessage: String? = null,
     val autoPreviewStoryId: Long? = null
 )
@@ -45,6 +48,7 @@ class StoryboardViewModel(
                     it.copy(
                         project = project,
                         isLoading = false,
+                        errorMessage = null,
                         autoPreviewStoryId = if (shouldNavigate) project?.id else null
                     )
                 }
@@ -57,6 +61,22 @@ class StoryboardViewModel(
         if (project.videoState == VideoTaskState.GENERATING) return
         viewModelScope.launch {
             repository.requestVideo(project.id)
+        }
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
+            val project = repository.observeStory(storyId).firstOrNull()
+            lastVideoState = project?.videoState
+            _uiState.update {
+                it.copy(
+                    project = project,
+                    isLoading = false,
+                    isRefreshing = false,
+                    errorMessage = if (project == null) "未找到分镜项目" else null
+                )
+            }
         }
     }
 

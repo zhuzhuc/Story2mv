@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +23,8 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -28,9 +32,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +46,8 @@ import com.nm.story2mv.data.model.ShotStatus
 import com.nm.story2mv.data.model.TransitionType
 import com.nm.story2mv.ui.screen.components.AnimatedDots
 import com.nm.story2mv.ui.screen.components.AnimatedStatusHint
+import com.nm.story2mv.ui.screen.components.EmptyStateCard
+import com.nm.story2mv.ui.screen.components.FullScreenLoading
 import com.nm.story2mv.ui.viewmodel.ShotDetailUiState
 
 @Composable
@@ -55,10 +58,21 @@ fun ShotDetailScreen(
     onTransitionChanged: (TransitionType) -> Unit,
     onGenerateImage: () -> Unit,
     onSave: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onRetry: () -> Unit
 ) {
     val status = state.shot?.status ?: ShotStatus.NOT_GENERATED
     val scrollState = rememberScrollState()
+
+    if (state.isLoading) {
+        FullScreenLoading(message = "正在加载镜头…")
+        return
+    }
+
+    if (state.shot == null) {
+        MissingShotState(error = state.error, onRetry = onRetry, onBack = onBack)
+        return
+    }
 
     Column(
         modifier = Modifier
@@ -80,10 +94,10 @@ fun ShotDetailScreen(
                 ShotGenerationTimeline(status = status)
                 AnimatedStatusHint(
                     text = when {
-                        state.isRegenerating -> "Regenerating shot image"
-                        state.shot?.status == ShotStatus.READY -> "Shot material is ready, you can adjust the prompt and regenerate anytime"
-                        state.shot?.status == ShotStatus.GENERATING -> "AI is generating the shot image"
-                        else -> "Complete the prompt and click the button below to generate"
+                        state.isRegenerating -> "正在重新生成镜头画面"
+                        state.shot?.status == ShotStatus.READY -> "镜头已生成，可随时调整提示词重新生成"
+                        state.shot?.status == ShotStatus.GENERATING -> "AI 正在生成镜头画面"
+                        else -> "完善提示词后点击下方按钮生成画面"
                     }
                 )
             }
@@ -102,14 +116,14 @@ fun ShotDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(160.dp),
-                    label = { Text("Visual Prompt") },
+                    label = { Text("画面提示词") },
                     leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.Transparent,
                         unfocusedBorderColor = Color.Transparent
                     ),
                     textStyle = MaterialTheme.typography.bodyLarge,
-                    supportingText = { Text(text = "Describe visual details, style, atmosphere, etc.") }
+                    supportingText = { Text(text = "描述画面细节、风格、氛围等。") }
                 )
 
                 OutlinedTextField(
@@ -118,7 +132,7 @@ fun ShotDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(120.dp),
-                    label = { Text("Narration") },
+                    label = { Text("旁白") },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.Transparent,
                         unfocusedBorderColor = Color.Transparent
@@ -134,7 +148,7 @@ fun ShotDetailScreen(
 
         if (state.isRegenerating) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            AnimatedDots(text = "Regenerating shot", modifier = Modifier.padding(start = 4.dp))
+            AnimatedDots(text = "重新生成镜头", modifier = Modifier.padding(start = 4.dp))
         }
 
         Row(
@@ -144,15 +158,14 @@ fun ShotDetailScreen(
         ) {
             Button(
                 onClick = onSave,
-                enabled = state.shot != null,
                 modifier = Modifier
                     .weight(1f)
                     .height(56.dp)
             ) {
-                Text("Save Changes")
+                Text("保存修改")
             }
             OutlinedButton(
-                enabled = !state.isRegenerating && state.shot != null,
+                enabled = !state.isRegenerating,
                 onClick = onGenerateImage,
                 modifier = Modifier
                     .weight(1f)
@@ -164,7 +177,7 @@ fun ShotDetailScreen(
                 }
                 Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null)
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Generate Shot Image")
+                Text("生成镜头画面")
             }
         }
 
@@ -187,11 +200,11 @@ private fun ShotDetailHeader(
         IconButton(onClick = onBack) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back"
+                contentDescription = "返回"
             )
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = shot?.title ?: "Shot Details", style = MaterialTheme.typography.headlineSmall)
+            Text(text = shot?.title ?: "分镜详情", style = MaterialTheme.typography.headlineSmall)
             Text(
                 text = "Story ID: ${shot?.storyId ?: "-"}",
                 style = MaterialTheme.typography.bodySmall
@@ -210,17 +223,17 @@ private fun ShotQuickInfoRow(shot: Shot?, transition: TransitionType) {
     ) {
         ShotInfoCard(
             modifier = Modifier.weight(1f),
-            title = "Transition",
+            title = "转场",
             value = transition.label
         )
         ShotInfoCard(
             modifier = Modifier.weight(1f),
-            title = "Prompt Length",
+            title = "提示词字数",
             value = "${shot.prompt.length}"
         )
         ShotInfoCard(
             modifier = Modifier.weight(1f),
-            title = "Narration Length",
+            title = "旁白字数",
             value = "${shot.narration.length}"
         )
     }
@@ -244,21 +257,32 @@ private fun ShotInfoCard(modifier: Modifier = Modifier, title: String, value: St
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun TransitionSelector(
     selected: TransitionType,
     onSelected: (TransitionType) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = "Video Transition Effect", style = MaterialTheme.typography.titleMedium)
-        SingleChoiceSegmentedButtonRow {
-            TransitionType.entries.forEachIndexed { index, type ->
-                SegmentedButton(
+        Text(text = "视频转场效果", style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = "选择镜头之间的衔接方式，效果会应用在生成的视频中。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            TransitionType.entries.forEach { type ->
+                FilterChip(
                     selected = type == selected,
                     onClick = { onSelected(type) },
-                    shape = SegmentedButtonDefaults.itemShape(index, TransitionType.entries.lastIndex)
-                ) {
-                    Text(type.label)
-                }
+                    label = { Text(type.label) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                        selectedLabelColor = MaterialTheme.colorScheme.primary
+                    )
+                )
             }
         }
     }
@@ -267,9 +291,9 @@ private fun TransitionSelector(
 @Composable
 private fun ShotStatusChip(status: ShotStatus) {
     val (label, color) = when (status) {
-        ShotStatus.NOT_GENERATED -> "Not Generated" to MaterialTheme.colorScheme.outline
-        ShotStatus.GENERATING -> "Generating" to MaterialTheme.colorScheme.tertiary
-        ShotStatus.READY -> "Ready" to MaterialTheme.colorScheme.primary
+        ShotStatus.NOT_GENERATED -> "未生成" to MaterialTheme.colorScheme.outline
+        ShotStatus.GENERATING -> "生成中" to MaterialTheme.colorScheme.tertiary
+        ShotStatus.READY -> "已生成" to MaterialTheme.colorScheme.primary
     }
     Surface(
         color = color.copy(alpha = 0.12f),
@@ -285,12 +309,39 @@ private fun ShotStatusChip(status: ShotStatus) {
 }
 
 @Composable
+private fun MissingShotState(error: String?, onRetry: () -> Unit, onBack: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        EmptyStateCard(
+            title = "未找到该镜头",
+            description = error ?: "镜头数据缺失或已删除。"
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(modifier = Modifier.weight(1f), onClick = onBack) {
+                Text("返回")
+            }
+            Button(modifier = Modifier.weight(1f), onClick = onRetry) {
+                Text("重试加载")
+            }
+        }
+    }
+}
+
+@Composable
 private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean) {
     val previewHint = when {
-        isRegenerating -> "Regenerating shot..."
-        status == ShotStatus.GENERATING -> "AI is generating the shot image"
-        status == ShotStatus.READY -> "Image generated, can be updated anytime"
-        else -> "Preview will be shown after generation"
+        isRegenerating -> "正在重新生成镜头…"
+        status == ShotStatus.GENERATING -> "AI 正在生成镜头画面"
+        status == ShotStatus.READY -> "画面已生成，可随时更新"
+        else -> "生成后将展示镜头预览"
     }
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -305,7 +356,7 @@ private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = "Shot Preview", style = MaterialTheme.typography.titleMedium)
+                Text(text = "镜头预览", style = MaterialTheme.typography.titleMedium)
                 ShotStatusChip(status = status)
             }
             Box(
@@ -345,9 +396,9 @@ private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean) {
 @Composable
 private fun ShotGenerationTimeline(status: ShotStatus) {
     val steps = listOf(
-        ShotStatus.NOT_GENERATED to "Not Generated",
-        ShotStatus.GENERATING to "Generating",
-        ShotStatus.READY to "Ready"
+        ShotStatus.NOT_GENERATED to "未生成",
+        ShotStatus.GENERATING to "生成中",
+        ShotStatus.READY to "已生成"
     )
     Row(
         modifier = Modifier

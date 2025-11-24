@@ -13,8 +13,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
@@ -24,6 +28,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,125 +51,189 @@ import kotlin.math.max
 fun StoryboardScreen(
     state: StoryProject?,
     isLoading: Boolean,
+    isRefreshing: Boolean,
+    errorMessage: String?,
     onShotDetail: (Shot) -> Unit,
     onPreview: () -> Unit,
-    onGenerateVideo: () -> Unit
+    onGenerateVideo: () -> Unit,
+    onRetry: () -> Unit
 ) {
     when {
-        isLoading -> FullScreenLoading(message = "Loading storyboard…")
+        isLoading -> FullScreenLoading(message = "加载分镜中…")
 
-        state == null -> EmptyStoryboardPlaceholder()
+        state == null -> EmptyStoryboardPlaceholder(errorMessage = errorMessage, onRetry = onRetry)
 
         else -> {
             StoryboardContent(
                 project = state,
+                isRefreshing = isRefreshing,
+                errorMessage = errorMessage,
                 onShotDetail = onShotDetail,
                 onGenerateVideo = onGenerateVideo,
-                onPreview = onPreview
+                onPreview = onPreview,
+                onRetry = onRetry
             )
         }
     }
 }
 @Composable
+@OptIn(ExperimentalMaterialApi::class)
 private fun StoryboardContent(
     project: StoryProject,
+    isRefreshing: Boolean,
+    errorMessage: String?,
     onShotDetail: (Shot) -> Unit,
     onGenerateVideo: () -> Unit,
-    onPreview: () -> Unit
+    onPreview: () -> Unit,
+    onRetry: () -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { max(project.shots.size, 1) })
     val readyCount = project.shots.count { it.status == ShotStatus.READY }
     val generatingCount = project.shots.count { it.status == ShotStatus.GENERATING }
     val completionRatio = if (project.shots.isEmpty()) 0f else readyCount.toFloat() / project.shots.size
+    val canPreview = project.videoState == VideoTaskState.READY && project.previewUrl != null
+    val canGenerateVideo = project.shots.isNotEmpty() &&
+        project.shots.all { it.status == ShotStatus.READY } &&
+        project.videoState != VideoTaskState.GENERATING
+    val waitingCount = project.shots.count { it.status != ShotStatus.READY }
+    val pullRefreshState = rememberPullRefreshState(refreshing = isRefreshing, onRefresh = onRetry)
+    val generateCooldownMs = 1800L
+    var lastGenerateClick by remember { mutableStateOf(0L) }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+            .pullRefresh(pullRefreshState)
     ) {
-        StoryOverviewCard(
-            project = project,
-            readyCount = readyCount,
-            generatingCount = generatingCount,
-            completionRatio = completionRatio
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            StoryOverviewCard(
+                project = project,
+                readyCount = readyCount,
+                generatingCount = generatingCount,
+                completionRatio = completionRatio
+            )
 
-        if (project.shots.isEmpty()) {
-            EmptyShots()
-        } else {
+            errorMessage?.let {
+                InlineMessage(text = it, onRetry = onRetry)
+            }
+
+            if (project.shots.isEmpty()) {
+                EmptyShots(onRetry)
+            } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text(text = "Storyboard Shots", style = MaterialTheme.typography.titleLarge)
+                    Text(text = "分镜镜头", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        text = "Swipe left and right to view shot details",
+                        text = "左右滑动查看镜头详情",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Text(
-                    text = "${project.shots.size} shots",
+                    text = "${project.shots.size} 个镜头",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            HorizontalPager(
-                state = pagerState,
-                pageSpacing = 12.dp,
+            if (canPreview) {
+                AssistChip(onClick = onPreview, label = { Text("最新预览已就绪") })
+            }
+                HorizontalPager(
+                    state = pagerState,
+                    pageSpacing = 12.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(360.dp)
+                ) { page ->
+                    val shot = project.shots.getOrNull(page)
+                    if (shot != null) {
+                        ShotCard(
+                            shot = shot,
+                            onDetail = { onShotDetail(shot) }
+                        )
+                    }
+                }
+                PagerDots(total = project.shots.size, current = pagerState.currentPage)
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+            Button(
+                onClick = {
+                    val now = System.currentTimeMillis()
+                    if (now - lastGenerateClick > generateCooldownMs) {
+                        lastGenerateClick = now
+                        onGenerateVideo()
+                    }
+                },
+                enabled = canGenerateVideo,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(360.dp)
-            ) { page ->
-                val shot = project.shots.getOrNull(page)
-                if (shot != null) {
-                    ShotCard(
-                        shot = shot,
-                        onDetail = { onShotDetail(shot) }
-                    )
+                    .height(56.dp)
+            ) {
+                Text(
+                    when (project.videoState) {
+                        VideoTaskState.GENERATING -> "合成中..."
+                        VideoTaskState.READY -> "重新生成视频"
+                        else -> if (canGenerateVideo) "生成视频" else "等待 $waitingCount 个镜头就绪"
+                    }
+                )
+            }
+            if (project.videoState == VideoTaskState.GENERATING) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                AnimatedDots(text = "视频合成中", modifier = Modifier.padding(top = 4.dp))
+            }
+            if (canPreview) {
+                OutlinedButton(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    onClick = onPreview
+                ) {
+                    Text("查看成品预览")
                 }
             }
-            PagerDots(total = project.shots.size, current = pagerState.currentPage)
         }
-
-        Spacer(modifier = Modifier.weight(1f))
-        Button(
-            onClick = onGenerateVideo,
-            enabled = project.videoState != VideoTaskState.GENERATING,
+        PullRefreshIndicator(
+            refreshing = isRefreshing,
+            state = pullRefreshState,
             modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp)
-        ) {
-            Text(
-                when (project.videoState) {
-                    VideoTaskState.GENERATING -> "Generating..."
-                    VideoTaskState.READY -> "Regenerate Video"
-                    else -> "Generate Video"
-                }
-            )
-        }
-        if (project.videoState == VideoTaskState.GENERATING) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            AnimatedDots(text = "Video synthesis in progress", modifier = Modifier.padding(top = 4.dp))
-        }
-        if (project.videoState == VideoTaskState.READY) {
-            OutlinedButton(
+                .align(Alignment.TopCenter)
+                .padding(top = 8.dp)
+        )
+        if (isRefreshing) {
+            Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                onClick = onPreview
+                    .matchParentSize(),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.28f)
             ) {
-                Text("Preview Final Video")
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.Top,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    AnimatedDots(text = "刷新分镜列表", modifier = Modifier.padding(top = 12.dp))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun EmptyStoryboardPlaceholder() {
+private fun EmptyStoryboardPlaceholder(
+    errorMessage: String?,
+    onRetry: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -169,9 +241,20 @@ private fun EmptyStoryboardPlaceholder() {
         verticalArrangement = Arrangement.Center
     ) {
         EmptyStateCard(
-            title = "No Storyboard Yet",
-            description = "Please generate story content on the Create page first."
+            title = "暂无分镜",
+            description = "请先在 Create 页面生成故事内容。"
         )
+        errorMessage?.let {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(text = it, color = MaterialTheme.colorScheme.error)
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onRetry
+        ) {
+            Text("重新加载分镜")
+        }
     }
 }
 
@@ -200,8 +283,13 @@ private fun ShotCard(
                         .align(Alignment.TopStart)
                         .padding(12.dp)
                 )
+                val label = when (shot.status) {
+                    ShotStatus.NOT_GENERATED -> "生成后将展示镜头画面"
+                    ShotStatus.GENERATING -> "生成中，完成后将展示画面"
+                    ShotStatus.READY -> "已生成，可点击查看详情"
+                }
                 Text(
-                    text = "AI generated image will be displayed here",
+                    text = label,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -233,11 +321,11 @@ private fun ShotCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "Transition: ${shot.transition.label}",
+                    text = "转场：${shot.transition.label}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
-                AssistChip(onClick = onDetail, label = { Text("View Shot Details") })
+                AssistChip(onClick = onDetail, label = { Text("查看镜头详情") })
             }
         }
     }
@@ -246,9 +334,9 @@ private fun ShotCard(
 @Composable
 private fun ShotStatusBadge(status: ShotStatus, modifier: Modifier = Modifier) {
     val (label, color) = when (status) {
-        ShotStatus.NOT_GENERATED -> "Not Generated" to Color.Gray
-        ShotStatus.GENERATING -> "Generating" to MaterialTheme.colorScheme.tertiary
-        ShotStatus.READY -> "Generated" to MaterialTheme.colorScheme.primary
+        ShotStatus.NOT_GENERATED -> "未生成" to Color.Gray
+        ShotStatus.GENERATING -> "生成中" to MaterialTheme.colorScheme.tertiary
+        ShotStatus.READY -> "已生成" to MaterialTheme.colorScheme.primary
     }
     Row(
         modifier = modifier
@@ -261,7 +349,7 @@ private fun ShotStatusBadge(status: ShotStatus, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EmptyShots() {
+private fun EmptyShots(onRetry: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -274,11 +362,17 @@ private fun EmptyShots() {
                 .padding(16.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(text = "No Shots Yet", style = MaterialTheme.typography.titleMedium)
+            Text(text = "暂无镜头", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "After the story is generated, we will automatically create storyboards for you, or you can click the button below to regenerate them.",
+                text = "生成故事后会自动创建镜头，或点击下方重新加载/生成。",
                 style = MaterialTheme.typography.bodySmall
             )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                AssistChip(onClick = onRetry, label = { Text("重新加载") })
+            }
         }
     }
 }
@@ -308,11 +402,11 @@ private fun StoryOverviewCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text(text = "Story Style", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = "故事风格", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(text = project.style.label, style = MaterialTheme.typography.titleSmall)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(text = "Completion", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = "完成度", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
                         text = "${(completionRatio * 100).toInt()}%",
                         style = MaterialTheme.typography.titleSmall,
@@ -329,39 +423,39 @@ private fun StoryOverviewCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(text = "Ready: $readyCount", style = MaterialTheme.typography.bodySmall)
-                Text(text = "Generating: $generatingCount", style = MaterialTheme.typography.bodySmall)
-                Text(text = "Total: ${project.shots.size}", style = MaterialTheme.typography.bodySmall)
+                Text(text = "已就绪：$readyCount", style = MaterialTheme.typography.bodySmall)
+                Text(text = "生成中：$generatingCount", style = MaterialTheme.typography.bodySmall)
+                Text(text = "总计：${project.shots.size}", style = MaterialTheme.typography.bodySmall)
             }
-            VideoStatusBanner(project.videoState)
+            VideoStatusBanner(project.videoState, project.previewUrl != null)
         }
     }
 }
 
 @Composable
-private fun VideoStatusBanner(videoState: VideoTaskState) {
+private fun VideoStatusBanner(videoState: VideoTaskState, hasPreview: Boolean) {
     val (label, message, color) = when (videoState) {
         VideoTaskState.GENERATING -> Triple(
-            "Generating",
-            "Video synthesis in progress, will automatically navigate to preview page when completed.",
+            "合成中",
+            "正在合成成片，完成后将自动跳转至预览页。",
             MaterialTheme.colorScheme.tertiary
         )
 
         VideoTaskState.READY -> Triple(
-            "Completed",
-            "Latest video is ready, you can preview or export directly.",
+            "已完成",
+            if (hasPreview) "最新视频可预览/导出。" else "视频生成完成，等待预览地址。",
             MaterialTheme.colorScheme.primary
         )
 
         VideoTaskState.ERROR -> Triple(
-            "Failed",
-            "Synthesis failed, please try again later.",
+            "失败",
+            "合成失败，请稍后重试。",
             MaterialTheme.colorScheme.error
         )
 
         else -> Triple(
-            "Pending",
-            "Click the button below to start video synthesis.",
+            "待处理",
+            "点击下方按钮开始视频合成。",
             MaterialTheme.colorScheme.secondary
         )
     }
@@ -396,6 +490,27 @@ private fun PagerDots(total: Int, current: Int) {
                         else MaterialTheme.colorScheme.surfaceVariant
                     )
             )
+        }
+    }
+}
+
+@Composable
+private fun InlineMessage(text: String, onRetry: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.error.copy(alpha = 0.08f),
+        contentColor = MaterialTheme.colorScheme.error,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(text = text, style = MaterialTheme.typography.bodySmall)
+            AssistChip(onClick = onRetry, label = { Text("重试") })
         }
     }
 }

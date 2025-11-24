@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nm.story2mv.data.model.AssetItem
 import com.nm.story2mv.data.repository.StoryRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,7 +22,7 @@ data class AssetsUiState(
     val assets: List<AssetItem> = emptyList()
 )
 
-@OptIn(FlowPreview::class)
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class AssetsViewModel(
     private val repository: StoryRepository
 ) : ViewModel() {
@@ -46,4 +47,3 @@ class AssetsViewModel(
         _uiState.update { it.copy(query = newValue, isLoading = true) }
     }
 }
-

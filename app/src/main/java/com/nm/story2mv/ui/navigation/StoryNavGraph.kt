@@ -168,6 +168,8 @@ fun StoryApp(container: AppContainer) {
                 StoryboardScreen(
                     state = state.project,
                     isLoading = state.isLoading,
+                    isRefreshing = state.isRefreshing,
+                    errorMessage = state.errorMessage,
                     onShotDetail = { shot ->
                         navController.navigate(
                             StoryRoute.ShotDetail.build(shot.storyId, shot.id)
@@ -178,7 +180,8 @@ fun StoryApp(container: AppContainer) {
                             navController.navigate(StoryRoute.Preview.buildForStory(it))
                         }
                     },
-                    onGenerateVideo = vm::generateVideo
+                    onGenerateVideo = vm::generateVideo,
+                    onRetry = vm::refresh
                 )
             }
 
@@ -201,7 +204,8 @@ fun StoryApp(container: AppContainer) {
                     onTransitionChanged = vm::updateTransition,
                     onGenerateImage = vm::regenerateImage,
                     onSave = vm::saveShot,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onRetry = vm::reloadShot
                 )
             }
 
