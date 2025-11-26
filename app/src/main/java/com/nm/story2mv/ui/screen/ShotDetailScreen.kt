@@ -34,13 +34,14 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -48,6 +49,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import com.nm.story2mv.data.model.Shot
 import com.nm.story2mv.data.model.ShotStatus
 import com.nm.story2mv.data.model.TransitionType
@@ -95,7 +98,7 @@ fun ShotDetailScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         ShotDetailHeader(shot = state.shot, onBack = onBack)
-        PreviewPlaceholder(status = status, isRegenerating = state.isRegenerating)
+        PreviewPlaceholder(status = status, isRegenerating = state.isRegenerating, thumbnailUrl = state.shot?.thumbnailUrl)
         ShotQuickInfoRow(shot = state.shot, transition = state.transition)
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -366,7 +369,7 @@ private fun MissingShotState(error: String?, onRetry: () -> Unit, onBack: () -> 
 }
 
 @Composable
-private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean) {
+private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean, thumbnailUrl: String?) {
     val shimmerTransition = rememberInfiniteTransition(label = "previewShimmer")
     val shimmerOffset by shimmerTransition.animateFloat(
         initialValue = 0f,
@@ -425,19 +428,30 @@ private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean) {
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (isRegenerating || status == ShotStatus.GENERATING) {
-                        CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
-                    }
-                    Text(
-                        text = previewHint,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                if (thumbnailUrl != null && status == ShotStatus.READY && !isRegenerating) {
+                    AsyncImage(
+                        model = thumbnailUrl,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(MaterialTheme.shapes.medium),
+                        contentScale = ContentScale.Crop
                     )
+                } else {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (isRegenerating || status == ShotStatus.GENERATING) {
+                            CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+                        }
+                        Text(
+                            text = previewHint,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

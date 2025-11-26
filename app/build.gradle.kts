@@ -16,6 +16,9 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "BASE_URL_MAIN", "\"http://42.121.99.17:8000/\"")
+        buildConfigField("String", "BASE_URL_IMAGE", "\"http://42.121.99.17:8002/\"")
+        buildConfigField("String", "BASE_URL_STATIC", "\"http://42.121.99.17/\"")
     }
 
     buildTypes {
@@ -37,6 +40,7 @@ android {
     buildFeatures {
         compose = true
         viewBinding = true
+        buildConfig = true
     }
     buildToolsVersion = "36.1.0"
 }
@@ -52,6 +56,10 @@ dependencies {
     implementation(libs.androidx.compose.material)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.moshi)
+    implementation(libs.okhttp.logging)
+    implementation(libs.moshi)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

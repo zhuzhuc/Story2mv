@@ -16,6 +16,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
@@ -36,8 +38,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import com.nm.story2mv.data.model.Shot
 import com.nm.story2mv.data.model.ShotStatus
 import com.nm.story2mv.data.model.StoryProject
@@ -87,6 +92,9 @@ private fun StoryboardContent(
     onPreview: () -> Unit,
     onRetry: () -> Unit
 ) {
+    val scrollState = rememberScrollState()
+    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+    val pagerHeight = remember(screenHeight) { (screenHeight * 0.42f).coerceIn(220.dp, 360.dp) }
     val pagerState = rememberPagerState(pageCount = { max(project.shots.size, 1) })
     val readyCount = project.shots.count { it.status == ShotStatus.READY }
     val generatingCount = project.shots.count { it.status == ShotStatus.GENERATING }
@@ -109,6 +117,7 @@ private fun StoryboardContent(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(scrollState)
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -166,7 +175,7 @@ private fun StoryboardContent(
                     userScrollEnabled = !isRefreshing,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(360.dp)
+                        .height(pagerHeight)
                 ) { page ->
                     val shot = project.shots.getOrNull(page)
                     if (shot != null) {
@@ -179,7 +188,7 @@ private fun StoryboardContent(
                 PagerDots(total = project.shots.size, current = pagerState.currentPage)
             }
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
                     val now = System.currentTimeMillis()
@@ -295,26 +304,43 @@ private fun ShotCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(190.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .height(190.dp),
                 contentAlignment = Alignment.Center
             ) {
+                if (shot.thumbnailUrl != null) {
+                    AsyncImage(
+                        model = shot.thumbnailUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clip(MaterialTheme.shapes.medium)
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                    )
+                }
                 ShotStatusBadge(
                     status = shot.status,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(12.dp)
                 )
-                val label = when (shot.status) {
-                    ShotStatus.NOT_GENERATED -> "生成后将展示镜头画面"
-                    ShotStatus.GENERATING -> "生成中，完成后将展示画面"
-                    ShotStatus.READY -> "已生成，可点击查看详情"
+                if (shot.thumbnailUrl == null) {
+                    val label = when (shot.status) {
+                        ShotStatus.NOT_GENERATED -> "生成后将展示镜头画面"
+                        ShotStatus.GENERATING -> "生成中，完成后将展示画面"
+                        ShotStatus.READY -> "已生成，可点击查看详情"
+                    }
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
             Column(
                 modifier = Modifier

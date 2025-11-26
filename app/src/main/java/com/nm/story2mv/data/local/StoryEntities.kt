@@ -52,4 +52,3 @@ data class StoryWithShots(
     )
     val shots: List<ShotEntity>
 )
-

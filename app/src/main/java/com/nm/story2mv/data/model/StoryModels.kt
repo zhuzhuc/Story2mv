@@ -53,7 +53,9 @@ data class StoryProject(
     val createdAt: Instant,
     val shots: List<Shot> = emptyList(),
     val videoState: VideoTaskState = VideoTaskState.IDLE,
-    val previewUrl: String? = null
+    val previewUrl: String? = null,
+    val previewUrls: List<String> = emptyList(),
+    val previewAudioUrls: List<String> = emptyList()
 )
 
 data class AssetItem(
@@ -64,4 +66,3 @@ data class AssetItem(
     val createdAt: Instant,
     val previewUri: Uri?
 )
-

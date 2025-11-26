@@ -251,8 +251,10 @@ fun StoryApp(container: AppContainer) {
                 )
                 PreviewScreen(
                     state = vm.uiState.collectAsStateWithLifecycle().value,
+                    onSave = vm::saveVideo,
                     onExport = vm::exportVideo,
-                    onExportResultConsumed = vm::consumeExportResult
+                    onExportResultConsumed = vm::consumeExportResult,
+                    onSelectIndex = vm::playAt
                 )
             }
         }
