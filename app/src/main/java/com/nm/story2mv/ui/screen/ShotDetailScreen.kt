@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,10 +20,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -40,7 +43,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,8 +79,10 @@ fun ShotDetailScreen(
     val narrationLimit = 300
     val promptCountText = "${state.promptInput.length}/$promptLimit"
     val narrationCountText = "${state.narrationInput.length}/$narrationLimit"
-    val promptCountColor = if (state.promptInput.length > promptLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-    val narrationCountColor = if (state.narrationInput.length > narrationLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    val promptOverLimit = state.promptInput.length > promptLimit
+    val narrationOverLimit = state.narrationInput.length > narrationLimit
+    val promptCountColor = if (promptOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    val narrationCountColor = if (narrationOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
 
     if (state.isLoading) {
         FullScreenLoading(message = "正在加载镜头…")
@@ -98,7 +102,12 @@ fun ShotDetailScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         ShotDetailHeader(shot = state.shot, onBack = onBack)
-        PreviewPlaceholder(status = status, isRegenerating = state.isRegenerating, thumbnailUrl = state.shot?.thumbnailUrl)
+        PreviewPlaceholder(
+            status = status,
+            isRegenerating = state.isRegenerating,
+            thumbnailUrl = state.shot?.thumbnailUrl,
+            onGenerateImage = onGenerateImage
+        )
         ShotQuickInfoRow(shot = state.shot, transition = state.transition)
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -130,15 +139,16 @@ fun ShotDetailScreen(
                     value = state.promptInput,
                     onValueChange = onPromptChanged,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp),
+                        .fillMaxWidth(),
                     label = { Text("画面提示词") },
                     leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent
+                        focusedBorderColor = if (promptOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = if (promptOverLimit) MaterialTheme.colorScheme.error.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outline,
+                        cursorColor = if (promptOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     ),
                     textStyle = MaterialTheme.typography.bodyLarge,
+                    minLines = 5,
                     supportingText = {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -154,13 +164,14 @@ fun ShotDetailScreen(
                     value = state.narrationInput,
                     onValueChange = onNarrationChanged,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp),
+                        .fillMaxWidth(),
                     label = { Text("旁白") },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent
+                        focusedBorderColor = if (narrationOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = if (narrationOverLimit) MaterialTheme.colorScheme.error.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outline,
+                        cursorColor = if (narrationOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     ),
+                    minLines = 3,
                     supportingText = {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -193,9 +204,10 @@ fun ShotDetailScreen(
                 onClick = onSave,
                 modifier = Modifier
                     .weight(1f)
-                    .height(56.dp)
+                    .height(56.dp),
+                enabled = !state.isRegenerating
             ) {
-                Text("保存修改")
+                Text(if (state.isRegenerating) "生成中..." else "保存修改")
             }
             OutlinedButton(
                 enabled = !state.isRegenerating,
@@ -215,7 +227,7 @@ fun ShotDetailScreen(
         }
 
         state.error?.let {
-            Text(text = it, color = MaterialTheme.colorScheme.error)
+            ErrorBanner(message = it, onRetry = onRetry)
         }
     }
 }
@@ -248,43 +260,26 @@ private fun ShotDetailHeader(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun ShotQuickInfoRow(shot: Shot?, transition: TransitionType) {
     if (shot == null) return
-    Row(
+    val tags = listOf(
+        "转场 · ${transition.label}",
+        "提示词 ${shot.prompt.length} 字",
+        "旁白 ${shot.narration.length} 字",
+        "镜头 ID · ${shot.id.takeLast(6)}"
+    )
+    FlowRow(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        ShotInfoCard(
-            modifier = Modifier.weight(1f),
-            title = "转场",
-            value = transition.label
-        )
-        ShotInfoCard(
-            modifier = Modifier.weight(1f),
-            title = "提示词字数",
-            value = "${shot.prompt.length}"
-        )
-        ShotInfoCard(
-            modifier = Modifier.weight(1f),
-            title = "旁白字数",
-            value = "${shot.narration.length}"
-        )
-    }
-}
-
-@Composable
-private fun ShotInfoCard(modifier: Modifier = Modifier, title: String, value: String) {
-    Surface(
-        modifier = modifier,
-        tonalElevation = 2.dp,
-        shape = MaterialTheme.shapes.medium
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(text = title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(text = value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        tags.forEach { tag ->
+            AssistChip(
+                onClick = {},
+                enabled = false,
+                label = { Text(tag) }
+            )
         }
     }
 }
@@ -369,7 +364,12 @@ private fun MissingShotState(error: String?, onRetry: () -> Unit, onBack: () -> 
 }
 
 @Composable
-private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean, thumbnailUrl: String?) {
+private fun PreviewPlaceholder(
+    status: ShotStatus,
+    isRegenerating: Boolean,
+    thumbnailUrl: String?,
+    onGenerateImage: () -> Unit
+) {
     val shimmerTransition = rememberInfiniteTransition(label = "previewShimmer")
     val shimmerOffset by shimmerTransition.animateFloat(
         initialValue = 0f,
@@ -412,7 +412,7 @@ private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean, thum
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(230.dp)
+                    .height(280.dp)
                     .background(
                         brush = if (status == ShotStatus.READY && !isRegenerating) {
                             Brush.linearGradient(
@@ -437,6 +437,22 @@ private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean, thum
                             .clip(MaterialTheme.shapes.medium),
                         contentScale = ContentScale.Crop
                     )
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onGenerateImage,
+                            enabled = !isRegenerating,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Outlined.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = "重新生成")
+                        }
+                    }
                 } else {
                     Column(
                         modifier = Modifier.padding(12.dp),
@@ -446,11 +462,28 @@ private fun PreviewPlaceholder(status: ShotStatus, isRegenerating: Boolean, thum
                         if (isRegenerating || status == ShotStatus.GENERATING) {
                             CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
                         }
+                        if (status != ShotStatus.GENERATING && !isRegenerating) {
+                            Icon(
+                                imageVector = Icons.Outlined.Image,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
                         Text(
                             text = previewHint,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (!isRegenerating && status != ShotStatus.GENERATING) {
+                            OutlinedButton(
+                                onClick = onGenerateImage
+                            ) {
+                                Icon(Icons.Outlined.Refresh, contentDescription = null)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(text = "生成镜头画面")
+                            }
+                        }
                     }
                 }
             }
@@ -498,6 +531,28 @@ private fun ShotGenerationTimeline(status: ShotStatus) {
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(text = label, style = MaterialTheme.typography.labelSmall, color = indicatorColor)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorBanner(message: String, onRetry: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.error.copy(alpha = 0.08f),
+        contentColor = MaterialTheme.colorScheme.error,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(text = message, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.width(8.dp))
+            OutlinedButton(onClick = onRetry, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)) {
+                Text("重试")
             }
         }
     }

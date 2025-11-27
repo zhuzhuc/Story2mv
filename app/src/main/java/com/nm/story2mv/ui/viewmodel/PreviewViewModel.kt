@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nm.story2mv.BuildConfig
 import com.nm.story2mv.data.repository.StoryRepository
 import com.nm.story2mv.data.remote.NetworkModule
 import com.nm.story2mv.media.ExportDestination
@@ -161,13 +162,14 @@ class PreviewViewModel(
     }
 
     private fun parseLinks(html: String, ext: String): List<String> {
-        val pattern = Pattern.compile("""href=\"/api/file_test/([^\"]+\\$ext)\"""")
-        val matcher = pattern.matcher(html)
-        val result = mutableListOf<String>()
-        while (matcher.find()) {
-            val name = matcher.group(1)
-            result.add("http://42.121.99.17/api/file_test/$name")
-        }
-        return result.sorted()
+        // Match the static server route used by downloadSimple (file-test)
+        val base = BuildConfig.BASE_URL_STATIC.removeSuffix("/") + "/api/file-test/"
+        // Accept absolute/relative, underscore/hyphen, single/double quotes
+        val regex = Regex("""href=['\"](?:https?://[^'\"\\s]+)?/?api/file[-_]test/([^'\"\\s]+${Regex.escape(ext)})['\"]""", RegexOption.IGNORE_CASE)
+        return regex.findAll(html)
+            .mapNotNull { it.groupValues.getOrNull(1) }
+            .map { "$base$it" }
+            .sorted()
+            .toList()
     }
 }

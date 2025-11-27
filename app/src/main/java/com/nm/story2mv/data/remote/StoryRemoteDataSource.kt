@@ -120,7 +120,8 @@ class RemoteStoryRemoteDataSource(
         val body = resp.body() ?: throw IllegalStateException("Empty body")
         val storyboard = MoshiConverter.parseStoryboard(body.string())
             ?: throw IllegalStateException("Invalid storyboard json")
-        val fileBase = BuildConfig.BASE_URL_STATIC.removeSuffix("/") + "/api/file_test/"
+        // Keep the file path consistent with StaticApi.downloadSimple (file-test)
+        val fileBase = BuildConfig.BASE_URL_STATIC.removeSuffix("/") + "/api/file-test/"
         val mp4s = files.filter { it.endsWith(".mp4") }.sorted().map { "$fileBase$it" }
         val wavs = files.filter { it.endsWith(".wav") }.sorted().map { "$fileBase$it" }
         val imageFiles = files.filter { it.endsWith(".png") || it.endsWith(".jpg") }.sorted()
@@ -151,7 +152,8 @@ class RemoteStoryRemoteDataSource(
     }
 
     private fun parseLinks(html: String): List<String> {
-        val regex = Regex("""href=\"/api/file_test/([^\"]+)\"""")
+        // Be tolerant of absolute/relative links, hyphen/underscore and single/double quotes
+        val regex = Regex("""href=['\"](?:https?://[^'\"\\s]+)?/?api/file[-_]test/([^'\"\\s]+)['\"]""", RegexOption.IGNORE_CASE)
         return regex.findAll(html).mapNotNull { it.groupValues.getOrNull(1) }.toList()
     }
 

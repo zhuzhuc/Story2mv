@@ -31,12 +31,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
@@ -109,6 +111,17 @@ private fun StoryboardContent(
     var lastGenerateClick by remember { mutableStateOf(0L) }
     val isCooling = (System.currentTimeMillis() - lastGenerateClick) in 0..generateCooldownMs
 
+    val currentShot by remember(pagerState, project.shots) {
+        derivedStateOf { project.shots.getOrNull(pagerState.currentPage) ?: project.shots.firstOrNull() }
+    }
+    val tryGenerate: () -> Unit = {
+        val now = System.currentTimeMillis()
+        if (now - lastGenerateClick > generateCooldownMs) {
+            lastGenerateClick = now
+            onGenerateVideo()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -121,13 +134,18 @@ private fun StoryboardContent(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            VideoStatusBanner(project.videoState, project.previewUrl != null)
-
-            StoryOverviewCard(
+            StoryHeroCard(
                 project = project,
+                currentShot = currentShot,
                 readyCount = readyCount,
                 generatingCount = generatingCount,
-                completionRatio = completionRatio
+                completionRatio = completionRatio,
+                canPreview = canPreview,
+                canGenerateVideo = canGenerateVideo,
+                isCooling = isCooling,
+                waitingCount = waitingCount,
+                onPreview = onPreview,
+                onGenerateVideo = tryGenerate
             )
 
             errorMessage?.let {
@@ -166,9 +184,6 @@ private fun StoryboardContent(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (canPreview) {
-                    AssistChip(onClick = onPreview, label = { Text("最新预览已就绪") })
-                }
                 HorizontalPager(
                     state = pagerState,
                     pageSpacing = 12.dp,
@@ -189,49 +204,7 @@ private fun StoryboardContent(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = {
-                    val now = System.currentTimeMillis()
-                    if (now - lastGenerateClick > generateCooldownMs) {
-                        lastGenerateClick = now
-                        onGenerateVideo()
-                    }
-                },
-                enabled = canGenerateVideo && !isCooling,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-            ) {
-                Text(
-                    when (project.videoState) {
-                        VideoTaskState.GENERATING -> "合成中..."
-                        VideoTaskState.READY -> "重新生成视频"
-                        else -> if (canGenerateVideo) "生成视频" else "等待 $waitingCount 个镜头就绪"
-                    }
-                )
-            }
-            if (project.videoState == VideoTaskState.GENERATING) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                AnimatedDots(text = "视频合成中", modifier = Modifier.padding(top = 4.dp))
-            }
-            if (isCooling && canGenerateVideo) {
-                Text(
-                    text = "请稍候再试（防抖中）",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-            if (canPreview) {
-                OutlinedButton(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    onClick = onPreview
-                ) {
-                    Text("查看成品预览")
-                }
-            }
+            // 底部主操作移除，统一在 Hero 卡片内
         }
         PullRefreshIndicator(
             refreshing = isRefreshing,
@@ -304,7 +277,7 @@ private fun ShotCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(190.dp),
+                    .height(200.dp),
                 contentAlignment = Alignment.Center
             ) {
                 if (shot.thumbnailUrl != null) {
@@ -315,6 +288,17 @@ private fun ShotCard(
                         modifier = Modifier
                             .matchParentSize()
                             .clip(MaterialTheme.shapes.medium)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    0f to Color.Transparent,
+                                    0.6f to Color.Black.copy(alpha = 0.25f),
+                                    1f to Color.Black.copy(alpha = 0.5f)
+                                )
+                            )
                     )
                 } else {
                     Box(
@@ -329,6 +313,25 @@ private fun ShotCard(
                         .align(Alignment.TopStart)
                         .padding(12.dp)
                 )
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = shot.title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (shot.thumbnailUrl != null) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "转场：${shot.transition.label}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (shot.thumbnailUrl != null) Color.White else MaterialTheme.colorScheme.primary
+                    )
+                }
                 if (shot.thumbnailUrl == null) {
                     val label = when (shot.status) {
                         ShotStatus.NOT_GENERATED -> "生成后将展示镜头画面"
@@ -349,12 +352,6 @@ private fun ShotCard(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = shot.title,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
                     text = shot.prompt,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -367,11 +364,6 @@ private fun ShotCard(
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "转场：${shot.transition.label}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
                 )
                 AssistChip(onClick = onDetail, label = { Text("查看镜头详情") })
             }
@@ -426,12 +418,27 @@ private fun EmptyShots(onRetry: () -> Unit) {
 }
 
 @Composable
-private fun StoryOverviewCard(
+private fun StoryHeroCard(
     project: StoryProject,
+    currentShot: Shot?,
     readyCount: Int,
     generatingCount: Int,
-    completionRatio: Float
+    completionRatio: Float,
+    canPreview: Boolean,
+    canGenerateVideo: Boolean,
+    isCooling: Boolean,
+    waitingCount: Int,
+    onPreview: () -> Unit,
+    onGenerateVideo: () -> Unit
 ) {
+    val thumb = currentShot?.thumbnailUrl
+    val completionText = "${(completionRatio * 100).toInt()}% · 已就绪 $readyCount/${project.shots.size} · 生成中 $generatingCount"
+    val primaryLabel = when (project.videoState) {
+        VideoTaskState.GENERATING -> "合成中..."
+        VideoTaskState.READY -> "重新生成视频"
+        else -> if (canGenerateVideo) "生成视频" else "等待 $waitingCount 个镜头就绪"
+    }
+
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
@@ -439,83 +446,156 @@ private fun StoryOverviewCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(text = project.title, style = MaterialTheme.typography.headlineSmall)
-            Text(
-                text = project.synopsis,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(240.dp)
+                    .clip(MaterialTheme.shapes.large)
             ) {
-                Column {
-                    Text(text = "故事风格", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(text = project.style.label, style = MaterialTheme.typography.titleSmall)
+                if (thumb != null) {
+                    AsyncImage(
+                        model = thumb,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.matchParentSize()
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f)
+                                    )
+                                )
+                            )
+                    )
                 }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(text = "完成度", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Black.copy(alpha = 0.1f),
+                                0.6f to Color.Black.copy(alpha = 0.25f),
+                                1f to Color.Black.copy(alpha = 0.45f)
+                            )
+                        )
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    VideoStatusChip(videoState = project.videoState, hasPreview = canPreview)
+                    currentShot?.let {
+                        ShotStatusBadge(status = it.status)
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Text(
-                        text = "${(completionRatio * 100).toInt()}%",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        text = currentShot?.title ?: project.title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = currentShot?.prompt ?: project.synopsis,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.9f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (currentShot != null) {
+                        Text(
+                            text = "当前镜头 · 转场 ${currentShot.transition.label}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.85f)
+                        )
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(text = completionText, style = MaterialTheme.typography.bodySmall)
+                LinearProgressIndicator(
+                    progress = { completionRatio },
+                    modifier = Modifier.fillMaxWidth(),
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+                if (!canGenerateVideo && waitingCount > 0) {
+                    Text(
+                        text = "仍有 $waitingCount 个镜头未就绪，完成后可生成视频。",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            LinearProgressIndicator(
-                progress = { completionRatio },
-                modifier = Modifier.fillMaxWidth(),
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(text = "已就绪：$readyCount", style = MaterialTheme.typography.bodySmall)
-                Text(text = "生成中：$generatingCount", style = MaterialTheme.typography.bodySmall)
-                Text(text = "总计：${project.shots.size}", style = MaterialTheme.typography.bodySmall)
+                if (canPreview) {
+                    OutlinedButton(
+                        onClick = onPreview,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("查看成品预览")
+                    }
+                }
+                Button(
+                    onClick = onGenerateVideo,
+                    modifier = Modifier.weight(1f),
+                    enabled = canGenerateVideo && !isCooling
+                ) {
+                    Text(primaryLabel)
+                }
             }
-            VideoStatusBanner(project.videoState, project.previewUrl != null)
+            if (project.videoState == VideoTaskState.GENERATING) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                AnimatedDots(text = "视频合成中", modifier = Modifier.padding(top = 4.dp))
+            }
+            if (isCooling && canGenerateVideo) {
+                Text(
+                    text = "请稍候再试（防抖中）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun VideoStatusBanner(videoState: VideoTaskState, hasPreview: Boolean) {
-    val (label, message, color) = when (videoState) {
-        VideoTaskState.GENERATING -> Triple(
-            "合成中",
-            "正在合成成片，完成后将自动跳转至预览页。",
-            MaterialTheme.colorScheme.tertiary
-        )
-
-        VideoTaskState.READY -> Triple(
-            "已完成",
-            if (hasPreview) "最新视频可预览/导出。" else "视频生成完成，等待预览地址。",
-            MaterialTheme.colorScheme.primary
-        )
-
-        VideoTaskState.ERROR -> Triple(
-            "失败",
-            "合成失败，请稍后重试。",
-            MaterialTheme.colorScheme.error
-        )
-
-        else -> Triple(
-            "待处理",
-            "点击下方按钮开始视频合成。",
-            MaterialTheme.colorScheme.secondary
-        )
+private fun VideoStatusChip(videoState: VideoTaskState, hasPreview: Boolean) {
+    val (label, color) = when (videoState) {
+        VideoTaskState.GENERATING -> "合成中" to MaterialTheme.colorScheme.tertiary
+        VideoTaskState.READY -> if (hasPreview) "可预览" to MaterialTheme.colorScheme.primary else "已完成" to MaterialTheme.colorScheme.primary
+        VideoTaskState.ERROR -> "失败" to MaterialTheme.colorScheme.error
+        else -> "待处理" to MaterialTheme.colorScheme.secondary
     }
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = color.copy(alpha = 0.08f),
-        tonalElevation = 0.dp
+        color = color.copy(alpha = 0.2f),
+        contentColor = color,
+        shape = MaterialTheme.shapes.small
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = label, color = color, style = MaterialTheme.typography.labelLarge)
-            Text(text = message, style = MaterialTheme.typography.bodySmall)
-        }
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium
+        )
     }
 }
 

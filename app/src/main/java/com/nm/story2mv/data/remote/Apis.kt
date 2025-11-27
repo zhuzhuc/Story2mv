@@ -29,6 +29,7 @@ interface StaticApi {
     @GET("api/download-list/")
     suspend fun downloadList(): Response<ResponseBody>
 
-    @GET("api/file_test/{filename}")
+    // download-list--- file-test
+    @GET("api/file-test/{filename}")
     suspend fun downloadSimple(@Path("filename") filename: String): Response<ResponseBody>
 }
