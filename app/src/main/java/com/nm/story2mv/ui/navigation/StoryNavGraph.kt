@@ -221,7 +221,10 @@ fun StoryApp(container: AppContainer) {
                     },
                     onAssetPlay = { asset ->
                         navController.navigate(StoryRoute.Preview.buildForAsset(asset))
-                    }
+                    },
+                    onAssetDelete = vm::requestDeleteAsset,
+                    onConfirmDelete = vm::confirmDeleteAsset,
+                    onCancelDelete = vm::cancelDeleteAsset
                 )
             }
 

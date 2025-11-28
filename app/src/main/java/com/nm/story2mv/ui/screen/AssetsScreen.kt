@@ -21,13 +21,18 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -55,7 +60,10 @@ fun AssetsScreen(
     state: AssetsUiState,
     onQueryChanged: (String) -> Unit,
     onAssetSelected: (AssetItem) -> Unit,
-    onAssetPlay: (AssetItem) -> Unit
+    onAssetPlay: (AssetItem) -> Unit,
+    onAssetDelete: (AssetItem) -> Unit, // 新增：删除回调
+    onConfirmDelete: () -> Unit,        // 新增：确认删除
+    onCancelDelete: () -> Unit          // 新增：取消删除
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -165,11 +173,19 @@ fun AssetsScreen(
                         AssetCard(
                             asset = asset,
                             onClick = { onAssetSelected(asset) },
-                            onPlay = { onAssetPlay(asset) }
+                            onPlay = { onAssetPlay(asset) },
+                            onDelete = { onAssetDelete(asset) } // 新增删除回调
                         )
                     }
                 }
             }
+        }
+        if (state.showDeleteDialog) {
+            DeleteConfirmationDialog(
+                assetTitle = state.assetToDelete?.title ?: "",
+                onConfirm = onConfirmDelete,
+                onDismiss = onCancelDelete
+            )
         }
     }
 }
@@ -226,7 +242,8 @@ fun AssetsScreen(
 private fun AssetCard(
     asset: AssetItem,
     onClick: () -> Unit,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    onDelete: () -> Unit // 新增删除回调
 ) {
     Card(
         modifier = Modifier
@@ -271,6 +288,24 @@ private fun AssetCard(
                         modifier = Modifier.size(48.dp)
                     )
                 }
+                // 新增：删除按钮
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "删除",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clickable { onDelete() }
+                            .background(Color.Red.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
+                            .padding(4.dp)
+                    )
+                }
             }
 
             // 内容区域
@@ -296,6 +331,38 @@ private fun AssetCard(
             }
         }
     }
+}
+
+
+// 新增：删除确认对话框组件
+@Composable
+private fun DeleteConfirmationDialog(
+    assetTitle: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("确认删除") },
+        text = {
+            Text("确定要删除资产 \"$assetTitle\" 吗？此操作不可恢复。")
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("删除")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }
 
 @Composable

@@ -19,7 +19,9 @@ import kotlinx.coroutines.launch
 data class AssetsUiState(
     val query: String = "",
     val isLoading: Boolean = true,
-    val assets: List<AssetItem> = emptyList()
+    val assets: List<AssetItem> = emptyList(),
+    val showDeleteDialog: Boolean = false, // 新增：显示删除确认对话框
+    val assetToDelete: AssetItem? = null   // 新增：待删除的资产
 )
 
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
@@ -45,5 +47,26 @@ class AssetsViewModel(
 
     fun updateQuery(newValue: String) {
         _uiState.update { it.copy(query = newValue, isLoading = true) }
+    }
+
+    // 新增：请求删除资产
+    fun requestDeleteAsset(asset: AssetItem) {
+        _uiState.update { it.copy(showDeleteDialog = true, assetToDelete = asset) }
+    }
+
+    // 新增：确认删除资产
+    fun confirmDeleteAsset() {
+        val assetToDelete = _uiState.value.assetToDelete
+        if (assetToDelete != null) {
+            viewModelScope.launch {
+                repository.deleteAsset(assetToDelete.id)
+                _uiState.update { it.copy(showDeleteDialog = false, assetToDelete = null) }
+            }
+        }
+    }
+
+    // 新增：取消删除
+    fun cancelDeleteAsset() {
+        _uiState.update { it.copy(showDeleteDialog = false, assetToDelete = null) }
     }
 }
