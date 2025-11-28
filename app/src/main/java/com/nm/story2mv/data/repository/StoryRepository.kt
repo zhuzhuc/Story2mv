@@ -43,8 +43,11 @@ interface StoryRepository {
         transitionType: TransitionType
     )
 
+
     suspend fun requestVideo(storyId: Long)
     suspend fun finalizeVideo(storyId: Long, previewUrl: String)
+
+    suspend fun deleteAsset(assetId: Long)
 }
 
 class StoryRepositoryImpl(
@@ -60,6 +63,7 @@ class StoryRepositoryImpl(
         val videos: List<String> = emptyList(),
         val audios: List<String> = emptyList()
     )
+
 
     override val projects: Flow<List<StoryProject>> =
         dao.observeStories().map { list -> list.map { it.toDomain() } }
@@ -219,6 +223,10 @@ class StoryRepositoryImpl(
                 sourceStoryId = story.id
             )
         )
+    }
+
+    override suspend fun deleteAsset(assetId: Long) = withContext(dispatcher) {
+        database.storyDao().deleteAsset(assetId)
     }
 
     companion object {

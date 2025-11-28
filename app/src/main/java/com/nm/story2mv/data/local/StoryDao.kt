@@ -53,5 +53,8 @@ interface StoryDao {
 
     @Query("SELECT COUNT(*) FROM stories")
     suspend fun countStories(): Int
+
+    @Query("DELETE FROM assets WHERE id = :assetId")
+    suspend fun deleteAsset(assetId: Long)
 }
 

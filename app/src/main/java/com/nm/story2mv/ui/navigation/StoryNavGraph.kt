@@ -68,6 +68,7 @@ sealed class StoryRoute(val route: String) {
     }
 }
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StoryApp(container: AppContainer) {
@@ -221,7 +222,10 @@ fun StoryApp(container: AppContainer) {
                     },
                     onAssetPlay = { asset ->
                         navController.navigate(StoryRoute.Preview.buildForAsset(asset))
-                    }
+                    },
+                    onAssetDelete = vm::requestDeleteAsset,
+                    onConfirmDelete = vm::confirmDeleteAsset,
+                    onCancelDelete = vm::cancelDeleteAsset
                 )
             }
 

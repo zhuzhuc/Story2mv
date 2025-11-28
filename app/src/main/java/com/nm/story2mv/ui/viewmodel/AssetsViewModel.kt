@@ -19,7 +19,9 @@ import kotlinx.coroutines.launch
 data class AssetsUiState(
     val query: String = "",
     val isLoading: Boolean = true,
-    val assets: List<AssetItem> = emptyList()
+    val assets: List<AssetItem> = emptyList(),
+    val showDeleteDialog: Boolean = false,
+    val assetToDelete: AssetItem? = null
 )
 
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
@@ -45,5 +47,25 @@ class AssetsViewModel(
 
     fun updateQuery(newValue: String) {
         _uiState.update { it.copy(query = newValue, isLoading = true) }
+    }
+
+
+    fun requestDeleteAsset(asset: AssetItem) {
+        _uiState.update { it.copy(showDeleteDialog = true, assetToDelete = asset) }
+    }
+
+    fun confirmDeleteAsset() {
+        val assetToDelete = _uiState.value.assetToDelete
+        if (assetToDelete != null) {
+            viewModelScope.launch {
+                repository.deleteAsset(assetToDelete.id)
+                _uiState.update { it.copy(showDeleteDialog = false, assetToDelete = null) }
+            }
+        }
+    }
+
+
+    fun cancelDeleteAsset() {
+        _uiState.update { it.copy(showDeleteDialog = false, assetToDelete = null) }
     }
 }

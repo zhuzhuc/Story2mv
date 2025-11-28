@@ -21,13 +21,18 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -55,7 +60,10 @@ fun AssetsScreen(
     state: AssetsUiState,
     onQueryChanged: (String) -> Unit,
     onAssetSelected: (AssetItem) -> Unit,
-    onAssetPlay: (AssetItem) -> Unit
+    onAssetPlay: (AssetItem) -> Unit,
+    onAssetDelete: (AssetItem) -> Unit, // 新增：删除回调
+    onConfirmDelete: () -> Unit,        // 新增：确认删除
+    onCancelDelete: () -> Unit          // 新增：取消删除
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -109,28 +117,6 @@ fun AssetsScreen(
                 )
             )
 
-//            // 功能按钮区域
-//
-//            Row(
-//                modifier = Modifier.fillMaxWidth(),
-//                horizontalArrangement = Arrangement.spacedBy(12.dp)
-//            ) {
-//                FunctionButton(
-//                    title = "写实风格",
-//                    iconRes = "movie",
-//                    onClick = { /* 处理点击 */ }
-//                )
-//                FunctionButton(
-//                    title = "第二风格",
-//                    iconRes = "collage",
-//                    onClick = { /* 处理点击 */ }
-//                )
-//                FunctionButton(
-//                    title = "第三风格",
-//                    iconRes = "collage2",
-//                    onClick = { /* 处理点击 */ }
-//                )
-//            }
 
             // 资产列表标题
             Text(
@@ -165,11 +151,19 @@ fun AssetsScreen(
                         AssetCard(
                             asset = asset,
                             onClick = { onAssetSelected(asset) },
-                            onPlay = { onAssetPlay(asset) }
+                            onPlay = { onAssetPlay(asset) },
+                            onDelete = { onAssetDelete(asset) } // 新增删除回调
                         )
                     }
                 }
             }
+        }
+        if (state.showDeleteDialog) {
+            DeleteConfirmationDialog(
+                assetTitle = state.assetToDelete?.title ?: "",
+                onConfirm = onConfirmDelete,
+                onDismiss = onCancelDelete
+            )
         }
     }
 }
@@ -226,7 +220,8 @@ fun AssetsScreen(
 private fun AssetCard(
     asset: AssetItem,
     onClick: () -> Unit,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -243,7 +238,7 @@ private fun AssetCard(
         )
     ) {
         Column {
-            // 缩略图
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -256,7 +251,7 @@ private fun AssetCard(
                         .fillMaxSize()
                 )
 
-                // 播放按钮覆盖层
+
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -265,15 +260,33 @@ private fun AssetCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Default.Search, // 替换为实际播放图标
+                        imageVector = androidx.compose.material.icons.Icons.Default.Search,
                         contentDescription = "播放",
                         tint = Color.White,
                         modifier = Modifier.size(48.dp)
                     )
                 }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "删除",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clickable { onDelete() }
+                            .background(Color.Red.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
+                            .padding(4.dp)
+                    )
+                }
             }
 
-            // 内容区域
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -296,6 +309,38 @@ private fun AssetCard(
             }
         }
     }
+}
+
+
+
+@Composable
+private fun DeleteConfirmationDialog(
+    assetTitle: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("确认删除") },
+        text = {
+            Text("确定要删除资产 \"$assetTitle\" 吗？此操作不可恢复。")
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("删除")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }
 
 @Composable

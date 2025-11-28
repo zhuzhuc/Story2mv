@@ -84,6 +84,7 @@ fun ShotDetailScreen(
     val promptCountColor = if (promptOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     val narrationCountColor = if (narrationOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
 
+
     if (state.isLoading) {
         FullScreenLoading(message = "正在加载镜头…")
         return
