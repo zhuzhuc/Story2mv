@@ -243,7 +243,7 @@ private fun AssetCard(
     asset: AssetItem,
     onClick: () -> Unit,
     onPlay: () -> Unit,
-    onDelete: () -> Unit // 新增删除回调
+    onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -260,7 +260,7 @@ private fun AssetCard(
         )
     ) {
         Column {
-            // 缩略图
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -273,7 +273,7 @@ private fun AssetCard(
                         .fillMaxSize()
                 )
 
-                // 播放按钮覆盖层
+
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -282,13 +282,13 @@ private fun AssetCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Default.Search, // 替换为实际播放图标
+                        imageVector = androidx.compose.material.icons.Icons.Default.Search,
                         contentDescription = "播放",
                         tint = Color.White,
                         modifier = Modifier.size(48.dp)
                     )
                 }
-                // 新增：删除按钮
+
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -308,7 +308,7 @@ private fun AssetCard(
                 }
             }
 
-            // 内容区域
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -334,7 +334,7 @@ private fun AssetCard(
 }
 
 
-// 新增：删除确认对话框组件
+
 @Composable
 private fun DeleteConfirmationDialog(
     assetTitle: String,

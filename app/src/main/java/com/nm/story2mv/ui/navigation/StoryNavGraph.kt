@@ -44,6 +44,7 @@ sealed class StoryRoute(val route: String) {
         fun build(storyId: Long) = "storyboard/$storyId"
     }
 
+
     data object ShotDetail : StoryRoute("shotDetail/{storyId}/{shotId}") {
         const val STORY_ID = "storyId"
         const val SHOT_ID = "shotId"

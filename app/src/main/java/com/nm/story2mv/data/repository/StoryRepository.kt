@@ -46,7 +46,7 @@ interface StoryRepository {
     suspend fun requestVideo(storyId: Long)
     suspend fun finalizeVideo(storyId: Long, previewUrl: String)
 
-    // 新增：删除资产
+
     suspend fun deleteAsset(assetId: Long)
 }
 
@@ -223,7 +223,7 @@ class StoryRepositoryImpl(
             )
         )
     }
-    // 新增：删除资产实现
+
     override suspend fun deleteAsset(assetId: Long) = withContext(dispatcher) {
         database.storyDao().deleteAsset(assetId)
     }
