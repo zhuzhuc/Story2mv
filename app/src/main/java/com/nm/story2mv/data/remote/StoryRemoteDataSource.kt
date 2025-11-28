@@ -60,6 +60,7 @@ interface StoryRemoteDataSource {
     suspend fun fetchAssets(query: String?): Result<List<AssetDto>>
 }
 
+
 class RemoteStoryRemoteDataSource(
     private val mainApi: MainApi = NetworkModule.mainApi,
     private val staticApi: StaticApi = NetworkModule.staticApi,
