@@ -50,7 +50,6 @@ sealed class StoryRoute(val route: String) {
         fun build(storyId: Long, shotId: String) = "shotDetail/$storyId/$shotId"
     }
 
-
     data object Assets : StoryRoute("assets")
 
     data object Preview :

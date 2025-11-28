@@ -43,9 +43,10 @@ interface StoryRepository {
         transitionType: TransitionType
     )
 
+
     suspend fun requestVideo(storyId: Long)
     suspend fun finalizeVideo(storyId: Long, previewUrl: String)
-    
+
     suspend fun deleteAsset(assetId: Long)
 }
 

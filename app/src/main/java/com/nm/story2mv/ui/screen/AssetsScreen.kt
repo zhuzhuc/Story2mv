@@ -365,7 +365,6 @@ private fun DeleteConfirmationDialog(
     )
 }
 
-
 @Composable
 private fun EmptyAssets() {
     EmptyStateCard(

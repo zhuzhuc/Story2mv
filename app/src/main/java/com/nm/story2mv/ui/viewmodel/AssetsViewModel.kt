@@ -24,7 +24,6 @@ data class AssetsUiState(
     val assetToDelete: AssetItem? = null
 )
 
-
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class AssetsViewModel(
     private val repository: StoryRepository
