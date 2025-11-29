@@ -18,15 +18,13 @@ import com.nm.story2mv.data.model.VideoTaskState
 import com.nm.story2mv.data.remote.CreateStoryRequest
 import com.nm.story2mv.data.remote.RemoteStoryRemoteDataSource
 import com.nm.story2mv.data.remote.StoryRemoteDataSource
-import com.nm.story2mv.data.remote.StoryboardFile
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.time.Instant
-import java.util.UUID
 
 interface StoryRepository {
     val projects: Flow<List<StoryProject>>
@@ -96,14 +94,13 @@ class StoryRepositoryImpl(
     }
 
     override suspend fun createStory(synopsis: String, style: StoryStyle): Long = withContext(dispatcher) {
-        val remoteResult = remote.createStory(CreateStoryRequest(synopsis = synopsis, style = style))
-        val blueprint = remoteResult.getOrNull()
-        val storyId = blueprint?.storyId ?: Instant.now().toEpochMilli()
-        val title = blueprint?.title ?: synopsis.take(18).ifBlank { "新故事" }
-        val createdAt = blueprint?.createdAt ?: Instant.now()
-        val previewUrl = blueprint?.previewUrl
-        val previewUrls = blueprint?.previewUrls.orEmpty()
-        val previewAudios = blueprint?.previewAudioUrls.orEmpty()
+        val blueprint = remote.createStory(CreateStoryRequest(synopsis = synopsis, style = style)).getOrThrow()
+        val storyId = blueprint.storyId
+        val title = blueprint.title
+        val createdAt = blueprint.createdAt
+        val previewUrl = blueprint.previewUrl
+        val previewUrls = blueprint.previewUrls
+        val previewAudios = blueprint.previewAudioUrls
         previewCache[storyId] = PreviewMedia(previewUrls, previewAudios)
         val story = StoryEntity(
             id = storyId,
@@ -115,7 +112,7 @@ class StoryRepositoryImpl(
             previewUrl = previewUrl
         )
 
-        val shots = blueprint?.shots?.map { dto ->
+        val shots = blueprint.shots.map { dto ->
             ShotEntity(
                 id = dto.id,
                 storyId = storyId,
@@ -126,7 +123,7 @@ class StoryRepositoryImpl(
                 status = dto.status,
                 transition = dto.transition
             )
-        } ?: generateShotTemplates(storyId, synopsis, style)
+        }
 
         database.withTransaction {
             dao.upsertStory(story)
@@ -153,8 +150,8 @@ class StoryRepositoryImpl(
     override suspend fun regenerateShot(storyId: Long, shotId: String) = withContext(dispatcher) {
         val current = dao.getShot(shotId)?.takeIf { it.storyId == storyId } ?: return@withContext
         dao.upsertShot(current.copy(status = ShotStatus.GENERATING))
-        val updated = remote.regenerateShot(storyId, shotId).getOrNull()
-        if (updated != null) {
+        try {
+            val updated = remote.regenerateShot(storyId, shotId).getOrThrow()
             dao.upsertShot(
                 current.copy(
                     prompt = updated.prompt,
@@ -164,14 +161,9 @@ class StoryRepositoryImpl(
                     thumbnailUrl = updated.thumbnailUrl ?: current.thumbnailUrl
                 )
             )
-        } else {
-            delay(1200)
-            dao.upsertShot(
-                current.copy(
-                    status = ShotStatus.READY,
-                    thumbnailUrl = "https://picsum.photos/seed/${UUID.randomUUID()}/640/360"
-                )
-            )
+        } catch (e: Exception) {
+            dao.upsertShot(current.copy(status = ShotStatus.READY))
+            throw e
         }
     }
 
@@ -192,16 +184,20 @@ class StoryRepositoryImpl(
     }
 
     override suspend fun requestVideo(storyId: Long) = withContext(dispatcher) {
-        val story = dao.getStory(storyId) ?: return@withContext
+        val storyWithShots = dao.observeStory(storyId).firstOrNull() ?: return@withContext
+        val story = storyWithShots.story
+        val imageUrl = storyWithShots.shots.firstNotNullOfOrNull { it.thumbnailUrl }
+            ?: throw IllegalStateException("没有可用的分镜图片用于生成视频")
+        val taskId = extractTaskIdFromUrl(imageUrl)
+            ?: throw IllegalStateException("无法从图片地址解析任务ID")
+
         dao.upsertStory(story.copy(videoState = VideoTaskState.GENERATING))
-        val start = System.currentTimeMillis()
-        val video = remote.requestVideo(storyId).getOrNull()
-        val elapsed = System.currentTimeMillis() - start
-        val minDurationMs = 2500L
-        if (elapsed < minDurationMs) {
-            delay(minDurationMs - elapsed)
+        runCatching {
+            val video = remote.requestVideo(storyId, taskId, imageUrl).getOrThrow()
+            finalizeVideo(storyId, video.previewUrl)
+        }.onFailure {
+            dao.upsertStory(story.copy(videoState = VideoTaskState.ERROR))
         }
-        finalizeVideo(storyId, video?.previewUrl ?: DEMO_VIDEO_URL)
     }
 
     override suspend fun finalizeVideo(storyId: Long, previewUrl: String) = withContext(dispatcher) {
@@ -227,11 +223,6 @@ class StoryRepositoryImpl(
 
     override suspend fun deleteAsset(assetId: Long) = withContext(dispatcher) {
         database.storyDao().deleteAsset(assetId)
-    }
-
-    companion object {
-        private const val DEMO_VIDEO_URL =
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
     }
 
     private fun StoryWithShots.toDomain(): StoryProject =
@@ -260,23 +251,9 @@ class StoryRepositoryImpl(
             transition = transition
         )
 
-    private fun generateShotTemplates(
-        storyId: Long,
-        synopsis: String,
-        style: StoryStyle
-    ): List<ShotEntity> {
-        val scenes = listOf("开场", "冲突", "转折", "结局")
-        return scenes.mapIndexed { index, label ->
-            ShotEntity(
-                id = UUID.randomUUID().toString(),
-                storyId = storyId,
-                title = "$label · ${style.label}",
-                prompt = "场景$label: $synopsis",
-                narration = "旁白$label：$synopsis",
-                thumbnailUrl = "https://picsum.photos/seed/${storyId + index}/600/360",
-                status = ShotStatus.READY,
-                transition = TransitionType.entries[index % TransitionType.entries.size]
-            )
-        }
+    private fun extractTaskIdFromUrl(url: String): String? {
+        val segments = runCatching { Uri.parse(url).pathSegments }.getOrNull().orEmpty()
+        val downloadIndex = segments.indexOf("download")
+        return segments.getOrNull(downloadIndex + 1)
     }
 }

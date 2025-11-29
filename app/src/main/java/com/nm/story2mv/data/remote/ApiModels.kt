@@ -13,11 +13,14 @@ data class StartPipelineResponse(
 )
 
 data class PipelineStatusResponse(
-    val status: String,
+    @Json(name = "overall_status") val overallStatus: String, // queued, processing, completed, failed
     val story: String? = null,
     val style: String? = null,
     @Json(name = "storyboard_file") val storyboardFile: String? = null,
     val images: List<String>? = null,
+    val audios: List<String>? = null,
+    @Json(name = "video_status") val videoStatus: String? = null,
+    val video: String? = null,
     val error: String? = null
 )
 
@@ -36,8 +39,9 @@ data class ImageGenRequest(
     val storyboard: StoryboardFile
 )
 
-data class ImageGenResponse(
-    val images: List<String>
+data class StartVideoResponse(
+    @Json(name = "task_id") val taskId: String,
+    val status: String? = null
 )
 
 data class StoryboardFile(

@@ -16,8 +16,10 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "BASE_URL_MAIN", "\"http://42.121.99.17:8000/\"")
+        // Pipeline 服务（含 /api 前缀）
+        buildConfigField("String", "BASE_URL_MAIN", "\"http://42.121.99.17/api/\"")
         buildConfigField("String", "BASE_URL_IMAGE", "\"http://42.121.99.17:8002/\"")
+        // 静态/测试服务
         buildConfigField("String", "BASE_URL_STATIC", "\"http://42.121.99.17/\"")
     }
 
