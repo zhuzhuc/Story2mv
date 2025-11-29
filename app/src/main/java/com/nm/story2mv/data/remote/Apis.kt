@@ -32,4 +32,16 @@ interface StaticApi {
     // download-list--- file-test
     @GET("api/file-test/{filename}")
     suspend fun downloadSimple(@Path("filename") filename: String): Response<ResponseBody>
+
+    // 新增：LLM服务器测试接口
+    @POST("api/LLM-Server-test/")
+    suspend fun llmServerTest(@Body body: LLMServerRequest): LLMServerResponse
+
+    // 新增：下载故事板文件
+    @GET("api/download-list/{taskId}/{filename}")
+    suspend fun downloadStoryboard(@Path("taskId") taskId: String, @Path("filename") filename: String): Response<ResponseBody>
+
+    // 新增：图片生成服务器测试接口
+    @POST("api/ImageGEN-Server-test/")
+    suspend fun imageGenServerTest(@Body body: ImageGenRequest): ImageGenResponse
 }

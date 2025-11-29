@@ -21,6 +21,25 @@ data class PipelineStatusResponse(
     val error: String? = null
 )
 
+data class LLMServerRequest(
+    val story: String,
+    val style: String
+)
+
+data class LLMServerResponse(
+    @Json(name = "task_id") val taskId: String,
+    val filename: String
+)
+
+data class ImageGenRequest(
+    @Json(name = "task_id") val taskId: String,
+    val storyboard: StoryboardFile
+)
+
+data class ImageGenResponse(
+    val images: List<String>
+)
+
 data class StoryboardFile(
     val scenes: List<SceneDto>
 )

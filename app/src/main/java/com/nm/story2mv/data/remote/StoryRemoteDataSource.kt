@@ -68,26 +68,32 @@ class RemoteStoryRemoteDataSource(
 ) : StoryRemoteDataSource {
 
     override suspend fun createStory(request: CreateStoryRequest): Result<StoryBlueprintDto> = runCatching {
-        // 尝试downloads-list
-        runCatching { fetchFromDownloadList(request) }
-            .recoverCatching { fetchFromPipeline(request) }
+        // 策略2先于策略1执行
+        runCatching { fetchFromPipeline(request) }
+            .recoverCatching { fetchFromDownloadList(request) }
             .getOrThrow()
     }
 
     private suspend fun fetchFromPipeline(request: CreateStoryRequest): StoryBlueprintDto {
-        val start = mainApi.startPipeline(StartPipelineRequest(story = request.synopsis, style = request.style.label))
-        val taskId = start.taskId
-        val status = pollStatus(taskId)
-        val storyboardFile = status.storyboardFile ?: throw IllegalStateException("Storyboard not ready")
-        val storyboardResponse = mainApi.downloadFile(taskId, storyboardFile)
+        // 第1步：访问LLM服务器测试接口
+        val llmResponse = staticApi.llmServerTest(LLMServerRequest(story = request.synopsis, style = request.style.label))
+        val taskId = llmResponse.taskId
+        val filename = llmResponse.filename
+
+        // 第2步：下载故事板文件
+        val storyboardResponse = staticApi.downloadStoryboard(taskId, filename)
         if (!storyboardResponse.isSuccessful) {
             throw IllegalStateException("Download storyboard failed: ${storyboardResponse.code()}")
         }
         val body = storyboardResponse.body() ?: throw IllegalStateException("Empty storyboard body")
         val storyboard = MoshiConverter.parseStoryboard(body.string())
             ?: throw IllegalStateException("Invalid storyboard json")
+
+        // 第3步：访问图片生成服务器测试接口
+        val imageGenResponse = staticApi.imageGenServerTest(ImageGenRequest(taskId = taskId, storyboard = storyboard))
+
         val shots = storyboard.scenes.mapIndexed { index, scene ->
-            val thumb = status.images?.getOrNull(index)?.let { "$imageBaseUrl/download/$taskId/$it" }
+            val thumb = imageGenResponse.images.getOrNull(index)?.let { "$imageBaseUrl/download/$taskId/$it" }
             ShotBlueprintDto(
                 id = UUID.randomUUID().toString(),
                 title = scene.sceneTitle,
