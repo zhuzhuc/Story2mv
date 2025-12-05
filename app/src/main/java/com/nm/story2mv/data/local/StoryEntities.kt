@@ -6,6 +6,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Relation
 import com.nm.story2mv.data.model.ShotStatus
 import com.nm.story2mv.data.model.StoryStyle
+import com.nm.story2mv.data.model.TaskKind
 import com.nm.story2mv.data.model.TransitionType
 import com.nm.story2mv.data.model.VideoTaskState
 import java.time.Instant
@@ -30,7 +31,24 @@ data class ShotEntity(
     val narration: String,
     val thumbnailUrl: String?,
     val status: ShotStatus,
-    val transition: TransitionType
+    val transition: TransitionType,
+    val videoUrl: String? = null,
+    val audioUrl: String? = null,
+    val videoStatus: VideoTaskState = VideoTaskState.IDLE
+)
+
+@Entity(tableName = "tasks")
+data class TaskEntity(
+    @PrimaryKey val id: String,
+    val kind: TaskKind,
+    val status: String,
+    val message: String? = null,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+    val storyId: Long? = null,
+    val shotId: String? = null,
+    val title: String? = null,
+    val videoUrl: String? = null
 )
 
 @Entity(tableName = "assets")

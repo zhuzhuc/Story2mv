@@ -43,13 +43,15 @@ data class StoryBlueprintDto(
     val shots: List<ShotBlueprintDto>,
     val previewUrl: String? = null,
     val previewUrls: List<String> = emptyList(),
-    val previewAudioUrls: List<String> = emptyList()
+    val previewAudioUrls: List<String> = emptyList(),
+    val taskId: String? = null
 )
 
 data class VideoTaskDto(
     val storyId: Long,
     val previewUrl: String,
-    val state: VideoTaskState
+    val state: VideoTaskState,
+    val taskId: String? = null
 )
 
 data class AssetDto(
@@ -71,19 +73,16 @@ interface StoryRemoteDataSource {
 
 class RemoteStoryRemoteDataSource(
     private val mainApi: MainApi = NetworkModule.mainApi,
-    private val staticApi: StaticApi = NetworkModule.staticApi,
     private val imageBaseUrl: String = BuildConfig.BASE_URL_IMAGE
 ) : StoryRemoteDataSource {
 
     override suspend fun createStory(request: CreateStoryRequest): Result<StoryBlueprintDto> = runCatching {
-        // 优先走 pipeline（/api/start_pipeline/），失败再回退静态链路
-        runCatching { fetchFromPipeline(request) }
-            .recoverCatching { fetchFromDownloadList(request) }
-            .getOrThrow()
+        // 仅调用 pipeline，失败直接抛错，不再回退静态链路
+        fetchFromPipeline(request)
     }
 
     private suspend fun fetchFromPipeline(request: CreateStoryRequest): StoryBlueprintDto {
-        // 策略1：使用 pipeline 接口（异步执行）
+        // 仅使用 pipeline 接口（异步执行）
         // 第1步：启动 pipeline
         val startResponse = mainApi.startPipeline(
             StartPipelineRequest(
@@ -132,72 +131,8 @@ class RemoteStoryRemoteDataSource(
             shots = shots,
             previewUrl = null,
             previewUrls = emptyList(),
-            previewAudioUrls = audioUrls
-        )
-    }
-
-    private suspend fun fetchFromDownloadList(request: CreateStoryRequest): StoryBlueprintDto {
-        // 新的策略2流程（3步请求）
-        // 第1步：访问LLM服务器
-        val llmResponse = runCatching {
-            staticApi.llmServerTest(
-                LLMServerRequest(
-                    story = request.synopsis,
-                    style = request.style.label
-                )
-            )
-        }.getOrElse { throw enrichHttpError("/api/LLM-Server-test/", it) }
-        val taskId = llmResponse.taskId
-        val filename = llmResponse.filename
-
-        // 第2步：下载故事板文件
-        val storyboardResponse = runCatching { staticApi.downloadStoryboard(taskId, filename) }
-            .getOrElse { throw enrichHttpError("/api/download-list/$taskId/$filename", it) }
-        if (!storyboardResponse.isSuccessful) {
-            val errorBody = storyboardResponse.errorBody()?.string().orEmpty()
-            throw IllegalStateException("下载故事板失败: code=${storyboardResponse.code()} body=$errorBody")
-        }
-        val body = storyboardResponse.body() ?: throw IllegalStateException("Empty storyboard body")
-        val storyboard = MoshiConverter.parseStoryboard(body.string())
-            ?: throw IllegalStateException("Invalid storyboard json")
-
-        // 第3步：访问图片生成服务器
-        val imageGenResponse = runCatching {
-            staticApi.imageGenServerTest(
-                ImageGenRequest(
-                    taskId = taskId,
-                    storyboard = storyboard
-                )
-            )
-        }.getOrElse { throw enrichHttpError("/api/ImageGEN-Server-test/", it) }
-        if (!imageGenResponse.isSuccessful) {
-            val errorBody = imageGenResponse.errorBody()?.string().orEmpty()
-            throw IllegalStateException("图片生成失败: code=${imageGenResponse.code()} body=$errorBody")
-        }
-        val imageUrls = parseImageUrls(imageGenResponse.body()?.string(), taskId)
-
-        val shots = storyboard.scenes.mapIndexed { index, scene ->
-            val thumb = imageUrls.getOrNull(index)
-            ShotBlueprintDto(
-                id = UUID.randomUUID().toString(),
-                title = scene.sceneTitle,
-                prompt = buildPrompt(scene),
-                narration = scene.narration,
-                thumbnailUrl = thumb,
-                transition = TransitionType.entries[index % TransitionType.entries.size],
-                status = ShotStatus.READY
-            )
-        }
-        return StoryBlueprintDto(
-            storyId = Instant.now().toEpochMilli(),
-            title = request.synopsis.take(18).ifBlank { "新故事" },
-            synopsis = request.synopsis,
-            style = request.style,
-            createdAt = Instant.now(),
-            shots = shots,
-            previewUrl = null,
-            previewUrls = emptyList(),
-            previewAudioUrls = emptyList()
+            previewAudioUrls = audioUrls,
+            taskId = taskId
         )
     }
 
@@ -231,32 +166,13 @@ class RemoteStoryRemoteDataSource(
         VideoTaskDto(
             storyId = storyId,
             previewUrl = videoUrl,
-            state = VideoTaskState.READY
+            state = VideoTaskState.READY,
+            taskId = videoTaskId
         )
     }
 
     override suspend fun fetchAssets(query: String?): Result<List<AssetDto>> = runCatching {
-        val response = staticApi.downloadList()
-        if (!response.isSuccessful) {
-            throw IllegalStateException("下载素材列表失败: ${response.code()}")
-        }
-        val html = response.body()?.string().orEmpty()
-        val now = Instant.now()
-        parseFileLinks(html, listOf(".mp4", ".mov", ".mkv", ".wav", ".mp3"))
-            .mapIndexed { index, filename ->
-                val title = filename.substringBeforeLast('.').ifBlank { "素材${index + 1}" }
-                val url = buildStaticFileUrl(filename)
-                AssetDto(
-                    id = now.toEpochMilli() + index,
-                    title = title,
-                    style = StoryStyle.CINEMATIC,
-                    thumbnailUrl = url,
-                    previewUrl = url,
-                    createdAt = now
-                )
-            }
-            .filter { asset -> query.isNullOrBlank() || asset.title.contains(query, ignoreCase = true) }
-            .sortedByDescending { it.createdAt }
+        emptyList()
     }
 
     private suspend fun pollPipelineStatus(taskId: String): PipelineStatusResponse {
@@ -336,15 +252,9 @@ class RemoteStoryRemoteDataSource(
         return BuildConfig.BASE_URL_MAIN.removeSuffix("/") + "/download/$taskId/$clean"
     }
 
-    private fun parseFileLinks(html: String, extensions: List<String>): List<String> {
-        if (html.isBlank()) return emptyList()
-        val joined = extensions.joinToString("|") { Regex.escape(it) }
-        val regex = Regex("""href=['\"](?:https?://[^'\"\\s]+)?/?api/file[-_]test/([^'\"\\s]+(?:$joined))['\"]""", RegexOption.IGNORE_CASE)
-        return regex.findAll(html).mapNotNull { it.groupValues.getOrNull(1) }.toList()
-    }
+    private fun parseFileLinks(html: String, extensions: List<String>): List<String> = emptyList()
 
-    private fun buildStaticFileUrl(filename: String): String =
-        BuildConfig.BASE_URL_STATIC.removeSuffix("/") + "/api/file-test/" + filename.removePrefix("/")
+    private fun buildStaticFileUrl(filename: String): String = filename
 }
 
 

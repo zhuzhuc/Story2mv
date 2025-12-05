@@ -21,8 +21,10 @@ data class ShotDetailUiState(
     val narrationInput: String = "",
     val transition: TransitionType = TransitionType.CROSSFADE,
     val isRegenerating: Boolean = false,
+    val isGeneratingVideo: Boolean = false,
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    val previewTitle: String = ""
 )
 
 class ShotDetailViewModel(
@@ -50,7 +52,8 @@ class ShotDetailViewModel(
                                 narrationInput = shot.narration,
                                 transition = shot.transition,
                                 isLoading = false,
-                                error = null
+                                error = null,
+                                previewTitle = shot.title
                             )
                         } else {
                             it.copy(
@@ -100,6 +103,21 @@ class ShotDetailViewModel(
                 _uiState.update { it.copy(error = throwable.message) }
             }.also {
                 _uiState.update { it.copy(isRegenerating = false) }
+            }
+        }
+    }
+
+    fun generateVideoForShot() {
+        val shot = _uiState.value.shot ?: return
+        if (_uiState.value.isGeneratingVideo) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGeneratingVideo = true, error = null) }
+            runCatching {
+                repository.requestVideoForShot(storyId, shot.id)
+            }.onFailure { throwable ->
+                _uiState.update { it.copy(error = throwable.message) }
+            }.also {
+                _uiState.update { it.copy(isGeneratingVideo = false) }
             }
         }
     }

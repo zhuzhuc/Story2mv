@@ -49,22 +49,5 @@ interface MainApi {
 }
 
 interface StaticApi {
-    @GET("api/download-list/")
-    suspend fun downloadList(): Response<ResponseBody>
-
-    // download-list--- file-test
-    @GET("api/file-test/{filename}")
-    suspend fun downloadSimple(@Path("filename") filename: String): Response<ResponseBody>
-
-    // ：LLM服务器测试接口
-    @POST("api/LLM-Server-test/")
-    suspend fun llmServerTest(@Body body: LLMServerRequest): LLMServerResponse
-
-    // 下载故事板文件
-    @GET("api/download-list/{taskId}/{filename}")
-    suspend fun downloadStoryboard(@Path("taskId") taskId: String, @Path("filename") filename: String): Response<ResponseBody>
-
-    // 图片生成服务器测试接口
-    @POST("api/ImageGEN-Server-test/")
-    suspend fun imageGenServerTest(@Body body: ImageGenRequest): Response<ResponseBody>
+    // 静态接口已移除占位，后续需要时再补充
 }

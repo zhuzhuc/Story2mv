@@ -6,6 +6,8 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
+import com.nm.story2mv.data.model.VideoTaskState
+import com.nm.story2mv.data.local.TaskEntity
 
 @Dao
 interface StoryDao {
@@ -45,6 +47,9 @@ interface StoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertShot(shot: ShotEntity)
 
+    @Query("UPDATE shots SET videoUrl = :videoUrl, videoStatus = :videoStatus WHERE id = :shotId")
+    suspend fun updateShotVideo(shotId: String, videoUrl: String?, videoStatus: VideoTaskState)
+
     @Query("DELETE FROM shots WHERE storyId = :storyId")
     suspend fun deleteShotsForStory(storyId: Long)
 
@@ -56,5 +61,10 @@ interface StoryDao {
 
     @Query("DELETE FROM assets WHERE id = :assetId")
     suspend fun deleteAsset(assetId: Long)
-}
 
+    @Query("SELECT * FROM tasks ORDER BY updatedAt DESC")
+    fun observeTasks(): Flow<List<TaskEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertTask(task: TaskEntity)
+}

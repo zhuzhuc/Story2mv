@@ -23,12 +23,20 @@ data class PreviewUiState(
     val videoUri: Uri? = null,
     val playlist: List<Uri> = emptyList(),
     val playlistLabels: List<String> = emptyList(),
+    val segments: List<PreviewSegment> = emptyList(),
     val currentIndex: Int = 0,
     val audioUri: Uri? = null,
     val audioPlaylist: List<Uri> = emptyList(),
     val isExporting: Boolean = false,
     val exportingDestination: ExportDestination? = null,
-    val exportResult: VideoExportResult? = null
+    val exportResult: VideoExportResult? = null,
+    val toastMessage: String? = null
+)
+
+data class PreviewSegment(
+    val label: String,
+    val uri: Uri?,
+    val ready: Boolean
 )
 
 class PreviewViewModel(
@@ -48,22 +56,32 @@ class PreviewViewModel(
     init {
         if (storyId != null) {
             viewModelScope.launch {
-                repository.observeStory(storyId).collect { project ->
-                    val playlist = project?.previewUrls?.mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }.orEmpty()
-                    val audioList = project?.previewAudioUrls?.mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }.orEmpty()
-                    val labels = playlist.mapIndexed { index, _ -> "视频${index + 1}" }
-                    _uiState.update {
-                        it.copy(
-                            title = project?.title.orEmpty(),
-                            videoUri = playlist.firstOrNull() ?: project?.previewUrl?.let(Uri::parse),
-                            playlist = if (playlist.isEmpty()) playlistFromArgs() else playlist,
-                            playlistLabels = if (playlist.isEmpty()) emptyList() else labels,
-                            currentIndex = 0,
-                            audioPlaylist = audioList,
-                            audioUri = audioList.firstOrNull()
-                        )
-                    }
+            repository.observeStory(storyId).collect { project ->
+                val segments = project?.shots.orEmpty().map { shot ->
+                    val uri = shot.videoUrl?.let { runCatching { Uri.parse(it) }.getOrNull() }
+                    PreviewSegment(
+                        label = shot.title,
+                        uri = uri,
+                        ready = uri != null
+                    )
                 }
+                val playlist = segments.mapNotNull { it.uri }
+                    .ifEmpty { project?.previewUrls?.mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }.orEmpty() }
+                val labels = segments.map { it.label }
+                val audioList = project?.previewAudioUrls?.mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }.orEmpty()
+                viewModelScope.launch { prepareAudio(audioList) }
+                _uiState.update {
+                    it.copy(
+                        title = project?.title.orEmpty(),
+                        videoUri = playlist.firstOrNull() ?: project?.previewUrl?.let(Uri::parse),
+                        playlist = if (playlist.isEmpty()) playlistFromArgs() else playlist,
+                        playlistLabels = if (playlist.isEmpty()) emptyList() else labels,
+                        segments = segments,
+                        currentIndex = 0,
+                        audioPlaylist = audioList
+                    )
+                }
+            }
             }
         } else {
             _uiState.update {
@@ -72,11 +90,11 @@ class PreviewViewModel(
                     videoUri = previewUriArg?.let(Uri::parse),
                     playlist = playlistFromArgs(),
                     playlistLabels = if (previewUriArg != null) listOf("视频") else emptyList(),
+                    segments = emptyList(),
                     currentIndex = 0
                 )
             }
         }
-        viewModelScope.launch { fetchPlaylistFromStatic() }
     }
 
     fun exportVideo() {
@@ -92,11 +110,13 @@ class PreviewViewModel(
     }
 
     fun playAt(index: Int) {
-        val list = _uiState.value.playlist
-        if (index in list.indices) {
-            val audio = _uiState.value.audioPlaylist.getOrNull(index) ?: _uiState.value.audioPlaylist.firstOrNull()
-            _uiState.update { it.copy(videoUri = list[index], currentIndex = index, audioUri = audio) }
-        }
+        val seg = _uiState.value.segments.getOrNull(index) ?: return
+        val audio = _uiState.value.audioPlaylist.getOrNull(index) ?: _uiState.value.audioPlaylist.firstOrNull()
+        _uiState.update { it.copy(videoUri = seg.uri, currentIndex = index, audioUri = audio) }
+    }
+
+    fun consumeToast() {
+        _uiState.update { it.copy(toastMessage = null) }
     }
 
     private fun playlistFromArgs(): List<Uri> =
@@ -125,51 +145,40 @@ class PreviewViewModel(
             val result = exportManager.exportPlaylist(
                 videoUris = sources,
                 title = safeTitle,
-                destination = destination
+                destination = destination,
+                audioUris = _uiState.value.audioPlaylist
             )
             _uiState.update {
                 it.copy(
                     isExporting = false,
                     exportingDestination = null,
-                    exportResult = result
+                    exportResult = result,
+                    toastMessage = when (result) {
+                        is VideoExportResult.Success -> {
+                            if (result.destination == ExportDestination.GALLERY) "已导出到相册"
+                            else "已保存到下载"
+                        }
+                        is VideoExportResult.Failure -> result.error
+                    }
                 )
             }
         }
     }
 
     private suspend fun fetchPlaylistFromStatic() {
-        runCatching {
-            val resp: Response<ResponseBody> = staticApi.downloadList()
-            if (!resp.isSuccessful) return
-            val html = resp.body()?.string() ?: return
-            val mp4s = parseLinks(html, ".mp4")
-            if (mp4s.isEmpty()) return
-            val wavs = parseLinks(html, ".wav")
-            _uiState.update { state ->
-                val uris = mp4s.mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }
-                val audios = wavs.mapNotNull { runCatching { Uri.parse(it) }.getOrNull() }
-                val labels = mp4s.mapIndexed { index, _ -> "视频${index + 1}" }
-                state.copy(
-                    playlist = uris,
-                    videoUri = state.videoUri ?: uris.firstOrNull(),
-                    playlistLabels = labels,
-                    currentIndex = if (uris.isNotEmpty()) 0 else state.currentIndex,
-                    audioPlaylist = audios,
-                    audioUri = audios.firstOrNull()
-                )
-            }
+        // download-list 已移除，不再从静态服务器拉取 demo
+    }
+
+    private suspend fun prepareAudio(audios: List<Uri>) {
+        if (audios.isEmpty()) return
+        val merged = exportManager.mergeAudioPlaylist(audios)
+        _uiState.update {
+            it.copy(
+                audioPlaylist = audios,
+                audioUri = merged ?: audios.firstOrNull()
+            )
         }
     }
 
-    private fun parseLinks(html: String, ext: String): List<String> {
-        // Match the static server route used by downloadSimple (file-test)
-        val base = BuildConfig.BASE_URL_STATIC.removeSuffix("/") + "/api/file-test/"
-        // Accept absolute/relative, underscore/hyphen, single/double quotes
-        val regex = Regex("""href=['\"](?:https?://[^'\"\\s]+)?/?api/file[-_]test/([^'\"\\s]+${Regex.escape(ext)})['\"]""", RegexOption.IGNORE_CASE)
-        return regex.findAll(html)
-            .mapNotNull { it.groupValues.getOrNull(1) }
-            .map { "$base$it" }
-            .sorted()
-            .toList()
-    }
+    private fun parseLinks(html: String, ext: String): List<String> = emptyList()
 }

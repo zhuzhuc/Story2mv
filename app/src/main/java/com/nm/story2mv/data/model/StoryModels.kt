@@ -33,6 +33,10 @@ enum class VideoTaskState {
     READY,
     ERROR
 }
+enum class TaskKind {
+    PIPELINE,
+    VIDEO
+}
 
 data class Shot(
     val id: String = UUID.randomUUID().toString(),
@@ -42,7 +46,23 @@ data class Shot(
     val narration: String,
     val thumbnailUrl: String? = null,
     val status: ShotStatus = ShotStatus.NOT_GENERATED,
-    val transition: TransitionType = TransitionType.CROSSFADE
+    val transition: TransitionType = TransitionType.CROSSFADE,
+    val videoUrl: String? = null,
+    val audioUrl: String? = null,
+    val videoStatus: VideoTaskState = VideoTaskState.IDLE
+)
+
+data class TaskItem(
+    val id: String,
+    val kind: TaskKind,
+    val status: String,
+    val message: String? = null,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+    val storyId: Long? = null,
+    val shotId: String? = null,
+    val title: String? = null,
+    val videoUrl: String? = null
 )
 
 data class StoryProject(

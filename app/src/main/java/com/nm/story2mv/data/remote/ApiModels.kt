@@ -54,3 +54,15 @@ data class SceneDto(
     @Json(name = "bgm_suggestion") val bgmSuggestion: String? = null,
     val prompt: Map<String, String> = emptyMap()
 )
+
+enum class TaskOverallStatus(val raw: String) {
+    QUEUED("queued"),
+    PROCESSING("processing"),
+    COMPLETED("completed"),
+    FAILED("failed");
+
+    companion object {
+        fun fromRaw(value: String?): TaskOverallStatus =
+            entries.firstOrNull { it.raw.equals(value, ignoreCase = true) } ?: PROCESSING
+    }
+}

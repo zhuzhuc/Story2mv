@@ -8,13 +8,14 @@ import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import com.nm.story2mv.data.model.ShotStatus
 import com.nm.story2mv.data.model.StoryStyle
+import com.nm.story2mv.data.model.TaskKind
 import com.nm.story2mv.data.model.TransitionType
 import com.nm.story2mv.data.model.VideoTaskState
 import java.time.Instant
 
 @Database(
-    entities = [StoryEntity::class, ShotEntity::class, AssetEntity::class],
-    version = 1,
+    entities = [StoryEntity::class, ShotEntity::class, AssetEntity::class, TaskEntity::class],
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(StoryTypeConverters::class)
@@ -60,5 +61,10 @@ class StoryTypeConverters {
 
     @TypeConverter
     fun toVideoTaskState(value: String?): VideoTaskState? = value?.let { VideoTaskState.valueOf(it) }
-}
 
+    @TypeConverter
+    fun fromTaskKind(value: TaskKind?): String? = value?.name
+
+    @TypeConverter
+    fun toTaskKind(value: String?): TaskKind? = value?.let { TaskKind.valueOf(it) }
+}

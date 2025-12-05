@@ -40,9 +40,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -50,7 +54,11 @@ import androidx.media3.ui.PlayerView
 import com.nm.story2mv.media.ExportDestination
 import com.nm.story2mv.media.VideoExportResult
 import com.nm.story2mv.ui.viewmodel.PreviewUiState
+import com.nm.story2mv.ui.viewmodel.PreviewSegment
 import kotlinx.coroutines.delay
+import android.net.Uri
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 
 @Composable
 fun PreviewScreen(
@@ -60,7 +68,13 @@ fun PreviewScreen(
     onExportResultConsumed: () -> Unit,
     onSelectIndex: (Int) -> Unit
 ) {
+    if (LocalInspectionMode.current) {
+        PreviewScreenPlaceholder(state = state, onSelectIndex = onSelectIndex)
+        return
+    }
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
     val playerHeight = remember(screenHeight) { (screenHeight * 0.5f).coerceIn(220.dp, 360.dp) }
@@ -136,6 +150,7 @@ fun PreviewScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        SnackbarHost(hostState = snackbarHostState)
 //        Text(text = state.title, style = MaterialTheme.typography.headlineSmall)
         Text(
             text = state.title,
@@ -145,6 +160,15 @@ fun PreviewScreen(
                 .fillMaxWidth()
                 .align(Alignment.CenterHorizontally)
         )
+        if (state.segments.isNotEmpty()) {
+            Text(
+                text = "片段 ${state.segments.count { it.ready }}/${state.segments.size}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
         AndroidView(
             modifier = Modifier
                 .fillMaxWidth()
@@ -210,9 +234,10 @@ fun PreviewScreen(
             }
         )
 
-        if (state.playlist.size > 1) {
+        val segments = state.segments
+        if (segments.isNotEmpty()) {
             Text(
-                text = "将拼接 ${state.playlist.size} 个片段后处理",
+                text = "片段 ${segments.count { it.ready }}/ ${segments.size} 已生成",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -239,23 +264,26 @@ fun PreviewScreen(
             }
         }
 
-        if (state.playlist.size > 1) {
+        if (segments.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                state.playlist.forEachIndexed { index, uri ->
+                segments.forEachIndexed { index, seg ->
                     val isActive = index == state.currentIndex
                     Button(
                         onClick = { onSelectIndex(index) },
-                        enabled = !state.isExporting,
+                        enabled = !state.isExporting && seg.ready,
                         modifier = Modifier
                             .weight(1f)
                             .height(42.dp)
                     ) {
-                        Text(text = "片段${index + 1}", color = if (isActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            text = "${index + 1}.${seg.label.take(6)}${if (seg.ready) "" else " (未生成)"}",
+                            color = if (isActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             }
@@ -263,24 +291,114 @@ fun PreviewScreen(
 
         when (val result = state.exportResult) {
             is VideoExportResult.Success -> {
-                val label = if (result.destination == ExportDestination.GALLERY) "已导出到相册" else "已保存到下载"
-                Text(
-                    text = "$label: ${result.outputUri}",
-                    color = MaterialTheme.colorScheme.primary
-                )
                 LaunchedEffect(result) {
                     onExportResultConsumed()
+                    val label = if (result.destination == ExportDestination.GALLERY) "已导出到相册" else "已保存到下载"
+                    scope.launch { snackbarHostState.showSnackbar(label) }
                 }
             }
 
             is VideoExportResult.Failure -> {
-                Text(text = result.error, color = MaterialTheme.colorScheme.error)
                 LaunchedEffect(result) {
+                    scope.launch { snackbarHostState.showSnackbar(result.error) }
                     onExportResultConsumed()
                 }
             }
 
             null -> Unit
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun PreviewScreenPreview() {
+    val segments = listOf(
+        PreviewSegment(label = "镜头一", uri = null, ready = false),
+        PreviewSegment(label = "镜头二", uri = null, ready = false),
+        PreviewSegment(label = "镜头三", uri = android.net.Uri.parse("https://example.com/video1.mp4"), ready = true)
+    )
+    PreviewScreen(
+        state = PreviewUiState(
+            title = "雨夜回忆",
+            videoUri = segments[2].uri,
+            playlist = listOfNotNull(segments[2].uri),
+            playlistLabels = listOf("片段3"),
+            segments = segments,
+            currentIndex = 0
+        ),
+        onSave = {},
+        onExport = {},
+        onExportResultConsumed = {},
+        onSelectIndex = {}
+    )
+}
+
+@Composable
+private fun PreviewScreenPlaceholder(
+    state: PreviewUiState,
+    onSelectIndex: (Int) -> Unit
+) {
+    val scrollState = rememberScrollState()
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(
+            text = state.title.ifBlank { "预览" },
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(240.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = MaterialTheme.shapes.medium
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(text = "Preview 占位图", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        val segments = state.segments
+        if (segments.isNotEmpty()) {
+            Text(
+                text = "片段 ${segments.count { it.ready }}/${segments.size}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                segments.forEachIndexed { index, seg ->
+                    val isActive = index == state.currentIndex
+                    Button(
+                        onClick = { onSelectIndex(index) },
+                        enabled = seg.ready,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(42.dp)
+                    ) {
+                        Text(
+                            text = "${index + 1}.${seg.label.take(6)}${if (seg.ready) "" else " (未生成)"}",
+                            color = if (isActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
         }
     }
 }

@@ -61,6 +61,15 @@ class StoryboardViewModel(
         if (project.videoState == VideoTaskState.GENERATING) return
         viewModelScope.launch {
             repository.requestVideo(project.id)
+            _uiState.update { it.copy(toastMessage = "已提交合成，稍等几秒完成") }
+        }
+    }
+
+    fun generateAllVideos() {
+        val project = _uiState.value.project ?: return
+        viewModelScope.launch {
+            repository.requestVideosForAllShots(project.id)
+            _uiState.update { it.copy(toastMessage = "已提交全部镜头视频合成") }
         }
     }
 

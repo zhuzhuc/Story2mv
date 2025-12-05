@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +36,7 @@ import com.nm.story2mv.ui.screen.CreateScreen
 import com.nm.story2mv.ui.screen.PreviewScreen
 import com.nm.story2mv.ui.screen.ShotDetailScreen
 import com.nm.story2mv.ui.screen.StoryboardScreen
+import com.nm.story2mv.ui.screen.TasksScreen
 import com.nm.story2mv.ui.viewmodel.ViewModelFactories
 
 sealed class StoryRoute(val route: String) {
@@ -51,6 +53,7 @@ sealed class StoryRoute(val route: String) {
     }
 
     data object Assets : StoryRoute("assets")
+    data object Tasks : StoryRoute("tasks")
 
     data object Preview :
         StoryRoute("preview?storyId={storyId}&previewUri={previewUri}&previewTitle={previewTitle}") {
@@ -112,6 +115,16 @@ fun StoryApp(container: AppContainer) {
                     selected = currentRoute == StoryRoute.Assets.route,
                     onClick = {
                         navController.navigate(StoryRoute.Assets.route) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Filled.List, contentDescription = null) },
+                    label = { Text("Tasks") },
+                    selected = currentRoute == StoryRoute.Tasks.route,
+                    onClick = {
+                        navController.navigate(StoryRoute.Tasks.route) {
                             launchSingleTop = true
                         }
                     }
@@ -182,6 +195,7 @@ fun StoryApp(container: AppContainer) {
                         }
                     },
                     onGenerateVideo = vm::generateVideo,
+                    onGenerateAll = vm::generateAllVideos,
                     onRetry = vm::refresh
                 )
             }
@@ -198,16 +212,24 @@ fun StoryApp(container: AppContainer) {
                     factory = ViewModelFactories.shotDetailFactory(container.storyRepository)
                 )
                 val state = vm.uiState.collectAsStateWithLifecycle().value
-                ShotDetailScreen(
-                    state = state,
-                    onPromptChanged = vm::updatePrompt,
-                    onNarrationChanged = vm::updateNarration,
-                    onTransitionChanged = vm::updateTransition,
-                    onGenerateImage = vm::regenerateImage,
-                    onSave = vm::saveShot,
-                    onBack = { navController.popBackStack() },
-                    onRetry = vm::reloadShot
-                )
+                    ShotDetailScreen(
+                        state = state,
+                        onPromptChanged = vm::updatePrompt,
+                        onNarrationChanged = vm::updateNarration,
+                        onTransitionChanged = vm::updateTransition,
+                        onGenerateImage = vm::regenerateImage,
+                        onGenerateVideo = vm::generateVideoForShot,
+                        onPreviewShot = {
+                            state.shot?.let { shot ->
+                                navController.navigate(
+                                    StoryRoute.Preview.buildForStory(shot.storyId)
+                                )
+                            }
+                        },
+                        onSave = vm::saveShot,
+                        onBack = { navController.popBackStack() },
+                        onRetry = vm::reloadShot
+                    )
             }
 
             composable(StoryRoute.Assets.route) {
@@ -261,6 +283,32 @@ fun StoryApp(container: AppContainer) {
                     onSelectIndex = vm::playAt
                 )
             }
+
+            composable(StoryRoute.Tasks.route) {
+                val vm: com.nm.story2mv.ui.viewmodel.TasksViewModel = viewModel(
+                    factory = ViewModelFactories.tasksFactory(container.storyRepository)
+                )
+                val state = vm.uiState.collectAsStateWithLifecycle().value
+                TasksScreen(
+                    state = state,
+                    onTaskClick = { task ->
+                        when {
+                            task.shotId != null && task.storyId != null -> {
+                                navController.navigate(StoryRoute.ShotDetail.build(task.storyId, task.shotId))
+                            }
+                            task.storyId != null -> {
+                                navController.navigate(StoryRoute.Storyboard.build(task.storyId))
+                            }
+                        }
+                    },
+                    onStoryClick = { storyId ->
+                        navController.navigate(StoryRoute.Storyboard.build(storyId))
+                    },
+                    onShotClick = { storyId, shotId ->
+                        navController.navigate(StoryRoute.ShotDetail.build(storyId, shotId))
+                    }
+                )
+            }
         }
     }
 }
@@ -272,5 +320,6 @@ private fun titleForRoute(route: String?): String = when {
     route.startsWith("shotDetail") -> "分镜详情"
     route.startsWith(StoryRoute.Assets.route) -> "资产库"
     route.startsWith("preview") -> "成品预览"
+    route.startsWith(StoryRoute.Tasks.route) -> "任务列表"
     else -> "Story2MV"
 }

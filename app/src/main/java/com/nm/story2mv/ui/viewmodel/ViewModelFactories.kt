@@ -52,5 +52,9 @@ object ViewModelFactories {
                 )
             }
         }
-}
 
+    fun tasksFactory(repository: StoryRepository): ViewModelProvider.Factory =
+        viewModelFactory {
+            initializer { TasksViewModel(repository) }
+        }
+}

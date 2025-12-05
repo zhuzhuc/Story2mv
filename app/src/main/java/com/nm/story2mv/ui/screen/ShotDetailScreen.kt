@@ -22,9 +22,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -61,6 +64,9 @@ import com.nm.story2mv.ui.screen.components.AnimatedStatusHint
 import com.nm.story2mv.ui.screen.components.EmptyStateCard
 import com.nm.story2mv.ui.screen.components.FullScreenLoading
 import com.nm.story2mv.ui.viewmodel.ShotDetailUiState
+import androidx.compose.ui.tooling.preview.Preview
+import com.nm.story2mv.data.model.StoryStyle
+import java.time.Instant
 
 @Composable
 fun ShotDetailScreen(
@@ -69,6 +75,8 @@ fun ShotDetailScreen(
     onNarrationChanged: (String) -> Unit,
     onTransitionChanged: (TransitionType) -> Unit,
     onGenerateImage: () -> Unit,
+    onGenerateVideo: () -> Unit,
+    onPreviewShot: () -> Unit,
     onSave: () -> Unit,
     onBack: () -> Unit,
     onRetry: () -> Unit
@@ -198,32 +206,67 @@ fun ShotDetailScreen(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Button(
-                onClick = onSave,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp),
-                enabled = !state.isRegenerating
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(if (state.isRegenerating) "生成中..." else "保存修改")
-            }
-            OutlinedButton(
-                enabled = !state.isRegenerating,
-                onClick = onGenerateImage,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp)
-            ) {
-                if (state.isRegenerating) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    enabled = state.shot?.thumbnailUrl != null && !state.isGeneratingVideo,
+                    onClick = onGenerateVideo,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                ) {
+                    if (state.isGeneratingVideo) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("生成视频")
                 }
-                Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("生成镜头画面")
+                FilledTonalButton(
+                    onClick = onSave,
+                    enabled = !state.isRegenerating,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Text(if (state.isRegenerating) "生成中..." else "保存修改")
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    enabled = !state.isRegenerating,
+                    onClick = onGenerateImage,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                ) {
+                    if (state.isRegenerating) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("生成镜头画面")
+                }
+                OutlinedButton(
+                    enabled = state.shot?.videoUrl != null,
+                    onClick = onPreviewShot,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Icon(imageVector = Icons.Outlined.Visibility, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("预览片段")
+                }
             }
         }
 
@@ -557,4 +600,41 @@ private fun ErrorBanner(message: String, onRetry: () -> Unit) {
             }
         }
     }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun ShotDetailScreenPreview() {
+    val sampleShot = Shot(
+        id = "shot-1",
+        storyId = 1L,
+        title = "镜头示例",
+        prompt = "雨夜街头的画面",
+        narration = "旁白内容示例",
+        thumbnailUrl = "https://picsum.photos/seed/preview/640/360",
+        status = ShotStatus.READY,
+        transition = TransitionType.CROSSFADE
+    )
+    ShotDetailScreen(
+        state = ShotDetailUiState(
+            shot = sampleShot,
+            promptInput = sampleShot.prompt,
+            narrationInput = sampleShot.narration,
+            transition = sampleShot.transition,
+            isRegenerating = false,
+            isGeneratingVideo = false,
+            isLoading = false,
+            error = null,
+            previewTitle = sampleShot.title
+        ),
+        onPromptChanged = {},
+        onNarrationChanged = {},
+        onTransitionChanged = {},
+        onGenerateImage = {},
+        onGenerateVideo = {},
+        onPreviewShot = {},
+        onSave = {},
+        onBack = {},
+        onRetry = {}
+    )
 }

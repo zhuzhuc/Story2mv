@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.ExperimentalMaterialApi
@@ -21,12 +22,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,6 +59,9 @@ import com.nm.story2mv.data.model.VideoTaskState
 import com.nm.story2mv.ui.screen.components.AnimatedDots
 import com.nm.story2mv.ui.screen.components.EmptyStateCard
 import com.nm.story2mv.ui.screen.components.FullScreenLoading
+import androidx.compose.ui.tooling.preview.Preview
+import com.nm.story2mv.data.model.StoryStyle
+import java.time.Instant
 import kotlin.math.max
 
 @Composable
@@ -63,6 +73,7 @@ fun StoryboardScreen(
     onShotDetail: (Shot) -> Unit,
     onPreview: () -> Unit,
     onGenerateVideo: () -> Unit,
+    onGenerateAll: () -> Unit,
     onRetry: () -> Unit
 ) {
     when {
@@ -71,17 +82,18 @@ fun StoryboardScreen(
         state == null -> EmptyStoryboardPlaceholder(errorMessage = errorMessage, onRetry = onRetry)
 
         else -> {
-            StoryboardContent(
-                project = state,
-                isRefreshing = isRefreshing,
-                errorMessage = errorMessage,
-                onShotDetail = onShotDetail,
-                onGenerateVideo = onGenerateVideo,
-                onPreview = onPreview,
-                onRetry = onRetry
-            )
+                StoryboardContent(
+                    project = state,
+                    isRefreshing = isRefreshing,
+                    errorMessage = errorMessage,
+                    onShotDetail = onShotDetail,
+                    onGenerateVideo = onGenerateVideo,
+                    onGenerateAll = onGenerateAll,
+                    onPreview = onPreview,
+                    onRetry = onRetry
+                )
+            }
         }
-    }
 }
 @Composable
 @OptIn(ExperimentalMaterialApi::class)
@@ -91,6 +103,7 @@ private fun StoryboardContent(
     errorMessage: String?,
     onShotDetail: (Shot) -> Unit,
     onGenerateVideo: () -> Unit,
+    onGenerateAll: () -> Unit,
     onPreview: () -> Unit,
     onRetry: () -> Unit
 ) {
@@ -145,7 +158,8 @@ private fun StoryboardContent(
                 isCooling = isCooling,
                 waitingCount = waitingCount,
                 onPreview = onPreview,
-                onGenerateVideo = tryGenerate
+                onGenerateVideo = tryGenerate,
+                onGenerateAll = onGenerateAll
             )
 
             errorMessage?.let {
@@ -429,7 +443,8 @@ private fun StoryHeroCard(
     isCooling: Boolean,
     waitingCount: Int,
     onPreview: () -> Unit,
-    onGenerateVideo: () -> Unit
+    onGenerateVideo: () -> Unit,
+    onGenerateAll: () -> Unit
 ) {
     val thumb = currentShot?.thumbnailUrl
     val completionText = "${(completionRatio * 100).toInt()}% · 已就绪 $readyCount/${project.shots.size} · 生成中 $generatingCount"
@@ -542,24 +557,40 @@ private fun StoryHeroCard(
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (canPreview) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = onGenerateVideo,
+                        modifier = Modifier.weight(1.3f),
+                        enabled = canGenerateVideo && !isCooling
+                    ) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(primaryLabel)
+                    }
                     OutlinedButton(
                         onClick = onPreview,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        enabled = canPreview
                     ) {
-                        Text("查看成品预览")
+                        Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("预览")
                     }
                 }
-                Button(
-                    onClick = onGenerateVideo,
-                    modifier = Modifier.weight(1f),
-                    enabled = canGenerateVideo && !isCooling
+                FilledTonalButton(
+                    onClick = onGenerateAll,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    enabled = !isCooling
                 ) {
-                    Text(primaryLabel)
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("一键生成全部镜头")
                 }
             }
             if (project.videoState == VideoTaskState.GENERATING) {
@@ -641,4 +672,56 @@ private fun InlineMessage(text: String, onRetry: () -> Unit) {
             AssistChip(onClick = onRetry, label = { Text("重试") })
         }
     }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun StoryboardPreview() {
+    val shots = listOf(
+        Shot(
+            id = "s1",
+            storyId = 1L,
+            title = "镜头一",
+            prompt = "雨夜街头",
+            narration = "雨夜街头的摄影师",
+            thumbnailUrl = "https://picsum.photos/seed/1/600/360",
+            status = ShotStatus.READY
+        ),
+        Shot(
+            id = "s2",
+            storyId = 1L,
+            title = "镜头二",
+            prompt = "旧城小巷",
+            narration = "旧城小巷的记忆",
+            thumbnailUrl = "https://picsum.photos/seed/2/600/360",
+            status = ShotStatus.READY
+        ),
+        Shot(
+            id = "s3",
+            storyId = 1L,
+            title = "镜头三",
+            prompt = "记忆交汇",
+            narration = "记忆交汇的瞬间",
+            thumbnailUrl = "https://picsum.photos/seed/3/600/360",
+            status = ShotStatus.NOT_GENERATED
+        )
+    )
+    StoryboardContent(
+        project = StoryProject(
+            id = 1L,
+            title = "雨夜回忆",
+            style = StoryStyle.CINEMATIC,
+            synopsis = "一位孤独的摄影师在雨夜的城市中寻找遗失的记忆。",
+            createdAt = Instant.now(),
+            shots = shots,
+            videoState = VideoTaskState.IDLE
+        ),
+        isRefreshing = false,
+        errorMessage = null,
+        onShotDetail = {},
+        onGenerateVideo = {},
+        onGenerateAll = {},
+        onPreview = {},
+        onRetry = {}
+    )
 }

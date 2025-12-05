@@ -8,11 +8,14 @@ import com.nm.story2mv.data.local.StoryDao
 import com.nm.story2mv.data.local.StoryDatabase
 import com.nm.story2mv.data.local.StoryEntity
 import com.nm.story2mv.data.local.StoryWithShots
+import com.nm.story2mv.data.local.TaskEntity
 import com.nm.story2mv.data.model.AssetItem
 import com.nm.story2mv.data.model.Shot
 import com.nm.story2mv.data.model.ShotStatus
 import com.nm.story2mv.data.model.StoryProject
 import com.nm.story2mv.data.model.StoryStyle
+import com.nm.story2mv.data.model.TaskItem
+import com.nm.story2mv.data.model.TaskKind
 import com.nm.story2mv.data.model.TransitionType
 import com.nm.story2mv.data.model.VideoTaskState
 import com.nm.story2mv.data.remote.CreateStoryRequest
@@ -31,6 +34,7 @@ interface StoryRepository {
     suspend fun ensureSeedData()
     fun observeStory(storyId: Long): Flow<StoryProject?>
     fun observeAssets(query: String?): Flow<List<AssetItem>>
+    fun observeTasks(): Flow<List<TaskItem>>
     suspend fun createStory(synopsis: String, style: StoryStyle): Long
     suspend fun regenerateShot(storyId: Long, shotId: String)
     suspend fun updateShotDetails(
@@ -41,8 +45,9 @@ interface StoryRepository {
         transitionType: TransitionType
     )
 
-
     suspend fun requestVideo(storyId: Long)
+    suspend fun requestVideoForShot(storyId: Long, shotId: String)
+    suspend fun requestVideosForAllShots(storyId: Long)
     suspend fun finalizeVideo(storyId: Long, previewUrl: String)
 
     suspend fun deleteAsset(assetId: Long)
@@ -83,6 +88,9 @@ class StoryRepositoryImpl(
             }
         }
 
+    override fun observeTasks(): Flow<List<TaskItem>> =
+        dao.observeTasks().map { list -> list.map { it.toDomain() } }
+
     override suspend fun ensureSeedData() = withContext(dispatcher) {
         val existing = dao.countStories()
         if (existing == 0) {
@@ -112,6 +120,21 @@ class StoryRepositoryImpl(
             previewUrl = previewUrl
         )
 
+        blueprint.taskId?.let { taskId ->
+            dao.upsertTask(
+                TaskEntity(
+                    id = taskId,
+                    kind = TaskKind.PIPELINE,
+                    status = "completed",
+                    message = null,
+                    createdAt = createdAt,
+                    updatedAt = Instant.now(),
+                    storyId = storyId,
+                    title = title
+                )
+            )
+        }
+
         val shots = blueprint.shots.map { dto ->
             ShotEntity(
                 id = dto.id,
@@ -121,7 +144,10 @@ class StoryRepositoryImpl(
                 narration = dto.narration,
                 thumbnailUrl = dto.thumbnailUrl,
                 status = dto.status,
-                transition = dto.transition
+                transition = dto.transition,
+                videoUrl = null,
+                audioUrl = null,
+                videoStatus = VideoTaskState.IDLE
             )
         }
 
@@ -186,17 +212,80 @@ class StoryRepositoryImpl(
     override suspend fun requestVideo(storyId: Long) = withContext(dispatcher) {
         val storyWithShots = dao.observeStory(storyId).firstOrNull() ?: return@withContext
         val story = storyWithShots.story
-        val imageUrl = storyWithShots.shots.firstNotNullOfOrNull { it.thumbnailUrl }
+        val firstShot = storyWithShots.shots.firstOrNull { it.thumbnailUrl != null }
             ?: throw IllegalStateException("没有可用的分镜图片用于生成视频")
-        val taskId = extractTaskIdFromUrl(imageUrl)
-            ?: throw IllegalStateException("无法从图片地址解析任务ID")
+        generateShotVideo(story, firstShot)
+    }
 
-        dao.upsertStory(story.copy(videoState = VideoTaskState.GENERATING))
+    override suspend fun requestVideoForShot(storyId: Long, shotId: String) = withContext(dispatcher) {
+        val storyWithShots = dao.observeStory(storyId).firstOrNull() ?: return@withContext
+        val story = storyWithShots.story
+        val shot = storyWithShots.shots.firstOrNull { it.id == shotId }
+            ?: throw IllegalStateException("未找到镜头")
+        if (shot.thumbnailUrl == null) throw IllegalStateException("该镜头缺少图片，无法生成视频")
+        generateShotVideo(story, shot)
+    }
+
+    override suspend fun requestVideosForAllShots(storyId: Long) = withContext(dispatcher) {
+        val storyWithShots = dao.observeStory(storyId).firstOrNull() ?: return@withContext
+        val story = storyWithShots.story
+        storyWithShots.shots.forEach { shot ->
+            if (shot.thumbnailUrl != null) {
+                runCatching { generateShotVideo(story, shot) }
+            }
+        }
+    }
+
+    private suspend fun generateShotVideo(story: StoryEntity, shot: ShotEntity) {
+        val taskId = extractTaskIdFromUrl(shot.thumbnailUrl ?: "")
+            ?: throw IllegalStateException("无法从图片地址解析任务ID")
+        dao.upsertTask(
+            TaskEntity(
+                id = taskId,
+                kind = TaskKind.VIDEO,
+                status = "generating",
+                message = null,
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+                storyId = story.id,
+                shotId = shot.id,
+                title = shot.title
+            )
+        )
+        dao.updateShotVideo(shot.id, videoUrl = null, videoStatus = VideoTaskState.GENERATING)
         runCatching {
-            val video = remote.requestVideo(storyId, taskId, imageUrl).getOrThrow()
-            finalizeVideo(storyId, video.previewUrl)
+            val video = remote.requestVideo(story.id, taskId, requireNotNull(shot.thumbnailUrl)).getOrThrow()
+            dao.updateShotVideo(shot.id, videoUrl = video.previewUrl, videoStatus = VideoTaskState.READY)
+            dao.upsertTask(
+                TaskEntity(
+                    id = video.taskId ?: taskId,
+                    kind = TaskKind.VIDEO,
+                    status = "ready",
+                    message = null,
+                    createdAt = Instant.now(),
+                    updatedAt = Instant.now(),
+                    storyId = story.id,
+                    shotId = shot.id,
+                    title = shot.title,
+                    videoUrl = video.previewUrl
+                )
+            )
+            finalizeVideo(story.id, video.previewUrl)
         }.onFailure {
-            dao.upsertStory(story.copy(videoState = VideoTaskState.ERROR))
+            dao.updateShotVideo(shot.id, videoUrl = null, videoStatus = VideoTaskState.ERROR)
+            dao.upsertTask(
+                TaskEntity(
+                    id = taskId,
+                    kind = TaskKind.VIDEO,
+                    status = "failed",
+                    message = it.message,
+                    createdAt = Instant.now(),
+                    updatedAt = Instant.now(),
+                    storyId = story.id,
+                    shotId = shot.id,
+                    title = shot.title
+                )
+            )
         }
     }
 
@@ -248,7 +337,10 @@ class StoryRepositoryImpl(
             narration = narration,
             thumbnailUrl = thumbnailUrl,
             status = status,
-            transition = transition
+            transition = transition,
+            videoUrl = videoUrl,
+            audioUrl = audioUrl,
+            videoStatus = videoStatus
         )
 
     private fun extractTaskIdFromUrl(url: String): String? {
@@ -256,4 +348,18 @@ class StoryRepositoryImpl(
         val downloadIndex = segments.indexOf("download")
         return segments.getOrNull(downloadIndex + 1)
     }
+
+    private fun TaskEntity.toDomain(): TaskItem =
+        TaskItem(
+            id = id,
+            kind = kind,
+            status = status,
+            message = message,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+            storyId = storyId,
+            shotId = shotId,
+            title = title,
+            videoUrl = videoUrl
+        )
 }
